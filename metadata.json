@@ -1,0 +1,6 @@
+{
+  "name": "SAP Proposal Hub - Cotizaciones SAP",
+  "description": "Sistema estructurado para generar, estimar recursos y dar seguimiento a cotizaciones de proyectos de consultoría SAP con exportación a PDF.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
