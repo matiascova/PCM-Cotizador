@@ -13,14 +13,28 @@ import {
   Sparkles, 
   CheckCircle2, 
   AlertCircle,
-  HelpCircle
+  HelpCircle,
+  RefreshCw,
+  Globe2,
+  Briefcase,
+  UserCheck,
+  UserPlus,
+  CheckSquare,
+  Clock,
+  Calculator,
+  Percent
 } from 'lucide-react';
 import { 
   Quotation, 
   SapResourceItem, 
   MilestoneItem, 
   SapModuleCode, 
-  SeniorityLevel 
+  SeniorityLevel,
+  ProjectType,
+  PayrollCustomService,
+  PayrollServiceConfig,
+  RecruitmentActivityItem,
+  RecruitmentServiceConfig
 } from '../types';
 import { 
   SAP_CATALOG_MODULES, 
@@ -29,6 +43,8 @@ import {
   STANDARD_OUT_OF_SCOPE 
 } from '../data/sapModules';
 import { calculateQuotationTotals, formatCurrency } from '../utils/calculations';
+import { CURRENCIES, SupportedCurrency, getBenchmarkRate, convertCurrency } from '../utils/currencies';
+import { getCachedBancoCentralData, convertUfToClp, convertClpToUf, formatUfValue } from '../services/bcentralService';
 
 interface QuotationFormProps {
   initialQuote?: Quotation | null;
@@ -51,7 +67,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   const [version, setVersion] = useState(initialQuote?.version || '1.0');
   const [createdAt, setCreatedAt] = useState(initialQuote?.createdAt || new Date().toISOString().slice(0, 10));
   const [validUntil, setValidUntil] = useState(initialQuote?.validUntil || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
-  const [currency, setCurrency] = useState<'USD' | 'EUR' | 'CLP' | 'MXN' | 'COP'>(initialQuote?.currency || 'USD');
+  const [currency, setCurrency] = useState<'USD' | 'EUR' | 'CLP' | 'MXN' | 'COP' | 'UF'>(initialQuote?.currency || 'USD');
   const [currencySymbol, setCurrencySymbol] = useState(initialQuote?.currencySymbol || '$');
 
   // Client info
@@ -66,7 +82,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
 
   // Project scope
   const [projectTitle, setProjectTitle] = useState(initialQuote?.project.projectTitle || '');
-  const [projectType, setProjectType] = useState<Quotation['project']['projectType']>(initialQuote?.project.projectType || 'Roll-out de Módulos');
+  const [projectType, setProjectType] = useState<ProjectType>(initialQuote?.project.projectType || 'Roll-out de Módulos');
   const [sapSystemVersion, setSapSystemVersion] = useState(initialQuote?.project.sapSystemVersion || 'SAP S/4HANA 2023');
   const [methodology, setMethodology] = useState<Quotation['project']['methodology']>(initialQuote?.project.methodology || 'SAP Activate');
   const [durationMonths, setDurationMonths] = useState(initialQuote?.project.durationMonths || 4);
@@ -75,6 +91,87 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   const [scopeDescription, setScopeDescription] = useState(initialQuote?.project.scopeDescription || '');
   const [assumptions, setAssumptions] = useState<string[]>(initialQuote?.project.assumptions || STANDARD_ASSUMPTIONS);
   const [outOfScope, setOutOfScope] = useState<string[]>(initialQuote?.project.outOfScope || STANDARD_OUT_OF_SCOPE);
+
+  // =======================================================
+  // SERVICIOS ESPECIALIZADOS: 1. PROCESO DE REMUNERACIONES
+  // =======================================================
+  const [payrollEnabled, setPayrollEnabled] = useState<boolean>(
+    initialQuote?.payrollService?.enabled ?? (initialQuote?.project?.projectType === 'Proceso de Remuneraciones (Payroll)')
+  );
+  // • Cantidad de personas a Procesar pago de remuneraciones
+  const [payrollHeadcount, setPayrollHeadcount] = useState<number>(
+    initialQuote?.payrollService?.payrollHeadcount ?? 150
+  );
+  // • UF / Persona
+  const [payrollRatePerPersonUF, setPayrollRatePerPersonUF] = useState<number>(
+    initialQuote?.payrollService?.payrollRatePerPersonUF ?? 0.12
+  );
+  // • Cantidad de personas Control de asistencia
+  const [attendanceHeadcount, setAttendanceHeadcount] = useState<number>(
+    initialQuote?.payrollService?.attendanceHeadcount ?? 150
+  );
+  // • UF / Persona
+  const [attendanceRatePerPersonUF, setAttendanceRatePerPersonUF] = useState<number>(
+    initialQuote?.payrollService?.attendanceRatePerPersonUF ?? 0.05
+  );
+  // • Otros servicios desarrollados a medida (ej. contabilización de remuneraciones para otros sistemas)
+  const [customPayrollServices, setCustomPayrollServices] = useState<PayrollCustomService[]>(
+    initialQuote?.payrollService?.customServices ?? [
+      {
+        id: 'cs-init-1',
+        name: 'Contabilización de remuneraciones para SAP FI y otros sistemas ERP',
+        description: 'Generación automática de asientos contables de sueldos, provisiones y leyes sociales.',
+        quantity: 1,
+        unitPriceUF: 28,
+        subtotalUF: 28
+      }
+    ]
+  );
+
+  // =======================================================
+  // SERVICIOS ESPECIALIZADOS: 2. RECLUTAMIENTO & HEADHUNTING
+  // =======================================================
+  const [recruitmentEnabled, setRecruitmentEnabled] = useState<boolean>(
+    initialQuote?.recruitmentService?.enabled ?? (initialQuote?.project?.projectType === 'Reclutamiento, Selección & Headhunting')
+  );
+  // • Proceso, por ejemplo, Proceso Hunting
+  const [recruitmentProcessType, setRecruitmentProcessType] = useState<string>(
+    initialQuote?.recruitmentService?.processType ?? 'Proceso Hunting'
+  );
+  // • Costo una renta Bruta ($)
+  const [includeGrossSalaryFee, setIncludeGrossSalaryFee] = useState<boolean>(
+    initialQuote?.recruitmentService?.includeGrossSalaryFee ?? true
+  );
+  const [grossSalaryAmount, setGrossSalaryAmount] = useState<number>(
+    initialQuote?.recruitmentService?.grossSalaryAmount ?? 3500000
+  );
+  const [grossSalaryCurrency, setGrossSalaryCurrency] = useState<'CLP' | 'UF' | 'USD'>(
+    initialQuote?.recruitmentService?.grossSalaryCurrency ?? 'CLP'
+  );
+  const [grossSalaryFeePercentage, setGrossSalaryFeePercentage] = useState<number>(
+    initialQuote?.recruitmentService?.grossSalaryFeePercentage ?? 100
+  );
+  // • Actividad de Entrevistas varias o Descripción de Cargo (UF / Actividad)
+  const [recruitmentActivities, setRecruitmentActivities] = useState<RecruitmentActivityItem[]>(
+    initialQuote?.recruitmentService?.activities ?? [
+      {
+        id: 'act-init-1',
+        activityName: 'Descripción de Cargo / Levantamiento de Perfil y Competencias',
+        description: 'Taller de levantamiento de perfil técnico y competencias clave del rol.',
+        quantity: 1,
+        ratePerActivityUF: 4.5,
+        subtotalUF: 4.5
+      },
+      {
+        id: 'act-init-2',
+        activityName: 'Actividad de Entrevistas varias (Entrevistas psicolaborales por competencias)',
+        description: 'Batería de entrevistas por competencias STAR y aplicación de pruebas laborales.',
+        quantity: 3,
+        ratePerActivityUF: 2.5,
+        subtotalUF: 7.5
+      }
+    ]
+  );
 
   // Resources (The core SAP modules: HCM, MM, LE, PM, QM, ABAP, Basis, Security)
   const [resources, setResources] = useState<SapResourceItem[]>(
@@ -120,28 +217,161 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   const [expensesAmount, setExpensesAmount] = useState(initialQuote?.expensesAmount || 0);
   const [paymentTerms, setPaymentTerms] = useState(initialQuote?.paymentTerms || 'Facturación contra hito formalmente aceptado (30 días fecha factura).');
   const [guaranteeHypercareDays, setGuaranteeHypercareDays] = useState(initialQuote?.guaranteeHypercareDays || 30);
+  const [currencyChangePrompt, setCurrencyChangePrompt] = useState<{ prev: string; next: string } | null>(null);
+
+  // Dynamic calculations for specialized services
+  const payrollSubtotalUF = (Number(payrollHeadcount) || 0) * (Number(payrollRatePerPersonUF) || 0);
+  const attendanceSubtotalUF = (Number(attendanceHeadcount) || 0) * (Number(attendanceRatePerPersonUF) || 0);
+  const customServicesTotalUF = customPayrollServices.reduce((sum, cs) => sum + (Number(cs.quantity || 0) * Number(cs.unitPriceUF || 0)), 0);
+  const calculatedPayrollTotalUF = payrollSubtotalUF + attendanceSubtotalUF + customServicesTotalUF;
+
+  const calculatedRecruitmentGrossFeeUF = includeGrossSalaryFee ? (
+    grossSalaryCurrency === 'UF' 
+      ? ((Number(grossSalaryAmount) || 0) * ((Number(grossSalaryFeePercentage) || 100) / 100))
+      : convertClpToUf((Number(grossSalaryAmount) || 0) * ((Number(grossSalaryFeePercentage) || 100) / 100))
+  ) : 0;
+  const calculatedRecruitmentActivitiesTotalUF = recruitmentActivities.reduce((sum, a) => sum + (Number(a.quantity || 0) * Number(a.ratePerActivityUF || 0)), 0);
+  const calculatedRecruitmentTotalUF = calculatedRecruitmentGrossFeeUF + calculatedRecruitmentActivitiesTotalUF;
 
   // Live Calculations
   const previewTotals = calculateQuotationTotals({
+    currency,
     resources,
     discountPercentage,
     taxRatePercentage,
-    expensesAmount
+    expensesAmount,
+    payrollService: {
+      enabled: payrollEnabled,
+      payrollHeadcount: Number(payrollHeadcount) || 0,
+      payrollRatePerPersonUF: Number(payrollRatePerPersonUF) || 0,
+      payrollSubtotalUF,
+      attendanceHeadcount: Number(attendanceHeadcount) || 0,
+      attendanceRatePerPersonUF: Number(attendanceRatePerPersonUF) || 0,
+      attendanceSubtotalUF,
+      customServices: customPayrollServices,
+      customServicesTotalUF,
+      totalUF: calculatedPayrollTotalUF
+    },
+    recruitmentService: {
+      enabled: recruitmentEnabled,
+      processType: recruitmentProcessType,
+      includeGrossSalaryFee,
+      grossSalaryAmount: Number(grossSalaryAmount) || 0,
+      grossSalaryCurrency,
+      grossSalaryFeePercentage: Number(grossSalaryFeePercentage) || 100,
+      grossSalaryFeeTotalUF: calculatedRecruitmentGrossFeeUF,
+      activities: recruitmentActivities,
+      activitiesTotalUF: calculatedRecruitmentActivitiesTotalUF,
+      totalUF: calculatedRecruitmentTotalUF
+    }
   });
 
   const totalMilestonePercentage = milestones.reduce((sum, m) => sum + (Number(m.paymentPercentage) || 0), 0);
 
+  // Handler for custom payroll services
+  const handleAddCustomPayrollService = (name = 'Nuevo Servicio a Medida', defaultPriceUF = 20) => {
+    const newItem: PayrollCustomService = {
+      id: `cs-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name,
+      description: 'Servicio y parametrizaición complementaria según requerimiento del cliente.',
+      quantity: 1,
+      unitPriceUF: defaultPriceUF,
+      subtotalUF: defaultPriceUF
+    };
+    setCustomPayrollServices(prev => [...prev, newItem]);
+  };
+
+  const handleUpdateCustomPayrollService = (id: string, updates: Partial<PayrollCustomService>) => {
+    setCustomPayrollServices(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const updated = { ...item, ...updates };
+      const qty = Number(updated.quantity) || 0;
+      const price = Number(updated.unitPriceUF) || 0;
+      updated.subtotalUF = qty * price;
+      return updated;
+    }));
+  };
+
+  const handleDeleteCustomPayrollService = (id: string) => {
+    setCustomPayrollServices(prev => prev.filter(item => item.id !== id));
+  };
+
+  // Handler for recruitment activities
+  const handleAddRecruitmentActivity = (activityName = 'Nueva Actividad de Selección', defaultRateUF = 2.5) => {
+    const newAct: RecruitmentActivityItem = {
+      id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      activityName,
+      description: 'Actividad especializada del proceso de reclutamiento y selección.',
+      quantity: 1,
+      ratePerActivityUF: defaultRateUF,
+      subtotalUF: defaultRateUF
+    };
+    setRecruitmentActivities(prev => [...prev, newAct]);
+  };
+
+  const handleUpdateRecruitmentActivity = (id: string, updates: Partial<RecruitmentActivityItem>) => {
+    setRecruitmentActivities(prev => prev.map(act => {
+      if (act.id !== id) return act;
+      const updated = { ...act, ...updates };
+      const qty = Number(updated.quantity) || 0;
+      const rate = Number(updated.ratePerActivityUF) || 0;
+      updated.subtotalUF = qty * rate;
+      return updated;
+    }));
+  };
+
+  const handleDeleteRecruitmentActivity = (id: string) => {
+    setRecruitmentActivities(prev => prev.filter(act => act.id !== id));
+  };
+
   // Currency handler
-  const handleCurrencyChange = (newCurr: 'USD' | 'EUR' | 'CLP' | 'MXN' | 'COP') => {
+  const handleCurrencyChange = (newCurr: 'USD' | 'EUR' | 'CLP' | 'MXN' | 'COP' | 'UF') => {
+    const prevCurr = currency;
     setCurrency(newCurr);
-    const symbols: Record<string, string> = { USD: '$', EUR: '€', CLP: '$', MXN: '$', COP: '$' };
+    const symbols: Record<string, string> = { USD: '$', EUR: '€', CLP: '$', MXN: '$', COP: '$', UF: 'UF' };
     setCurrencySymbol(symbols[newCurr] || '$');
+
+    // Automatically set typical default tax rate based on country/jurisdiction
+    if (newCurr === 'UF') {
+      setTaxRatePercentage(19); // 19% IVA Chile
+      if (!country || country === 'Estados Unidos') setCountry('Chile');
+      setPaymentTerms('Valores en Unidades de Fomento (UF). Facturación mensual en Pesos Chilenos (CLP) al valor oficial de la UF publicado por el Banco Central de Chile a la fecha de emisión (30 días).');
+    } else if (newCurr === 'CLP') {
+      setTaxRatePercentage(19); // 19% IVA Chile
+      if (!country || country === 'Estados Unidos') setCountry('Chile');
+    } else if (newCurr === 'MXN') {
+      setTaxRatePercentage(16); // 16% IVA México
+      if (!country || country === 'Chile') setCountry('México');
+    } else if (newCurr === 'USD') {
+      setTaxRatePercentage(0); // 0% Exportación desde Chile exenta a Uruguay, Brasil, Colombia o regional
+      if (!country || country === 'Chile') setCountry('Uruguay / Brasil');
+    }
+
+    if (resources.length > 0 && prevCurr !== newCurr) {
+      setCurrencyChangePrompt({ prev: prevCurr, next: newCurr });
+    }
+  };
+
+  const handleApplyBenchmarkRatesForCurrency = () => {
+    setResources(prev => prev.map(r => {
+      const newRate = getBenchmarkRate(r.moduleCode, r.seniority, currency);
+      const hours = Number(r.hours) || 0;
+      return {
+        ...r,
+        hourlyRate: newRate,
+        subtotal: hours * newRate
+      };
+    }));
+    if (expensesAmount > 0 && currencyChangePrompt) {
+      setExpensesAmount(convertCurrency(expensesAmount, currencyChangePrompt.prev, currencyChangePrompt.next));
+    }
+    setCurrencyChangePrompt(null);
   };
 
   // Add Resource from catalog
   const handleAddModuleFromCatalog = (catalogMod: typeof SAP_CATALOG_MODULES[0]) => {
     const defaultSeniority: SeniorityLevel = 'Senior';
-    const rate = catalogMod.benchmarkRatesUSD[defaultSeniority] || 90;
+    const rate = getBenchmarkRate(catalogMod.code, defaultSeniority, currency);
     const hours = 120;
 
     const newRes: SapResourceItem = {
@@ -218,8 +448,9 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       return;
     }
 
-    if (resources.length === 0) {
-      alert('Debe agregar al menos un recurso de consultoría SAP.');
+    // A valid quotation must have at least consulting resources OR an active payroll/recruitment service
+    if (resources.length === 0 && !payrollEnabled && !recruitmentEnabled) {
+      alert('Debe agregar al menos un recurso de consultoría SAP o configurar servicios de remuneraciones / selección.');
       setActiveStep(3);
       return;
     }
@@ -235,6 +466,32 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
         author: 'Consultor Preventa SAP'
       }
     ];
+
+    const payrollConfig: PayrollServiceConfig | undefined = payrollEnabled ? {
+      enabled: true,
+      payrollHeadcount: Number(payrollHeadcount) || 0,
+      payrollRatePerPersonUF: Number(payrollRatePerPersonUF) || 0,
+      payrollSubtotalUF,
+      attendanceHeadcount: Number(attendanceHeadcount) || 0,
+      attendanceRatePerPersonUF: Number(attendanceRatePerPersonUF) || 0,
+      attendanceSubtotalUF,
+      customServices: customPayrollServices,
+      customServicesTotalUF,
+      totalUF: calculatedPayrollTotalUF
+    } : undefined;
+
+    const recruitmentConfig: RecruitmentServiceConfig | undefined = recruitmentEnabled ? {
+      enabled: true,
+      processType: recruitmentProcessType,
+      includeGrossSalaryFee,
+      grossSalaryAmount: Number(grossSalaryAmount) || 0,
+      grossSalaryCurrency,
+      grossSalaryFeePercentage: Number(grossSalaryFeePercentage) || 100,
+      grossSalaryFeeTotalUF: calculatedRecruitmentGrossFeeUF,
+      activities: recruitmentActivities,
+      activitiesTotalUF: calculatedRecruitmentActivitiesTotalUF,
+      totalUF: calculatedRecruitmentTotalUF
+    } : undefined;
 
     const savedQuotation: Quotation = {
       id: initialQuote?.id || `quote-${Date.now()}`,
@@ -270,6 +527,8 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       },
       resources,
       milestones,
+      payrollService: payrollConfig,
+      recruitmentService: recruitmentConfig,
       discountPercentage: Number(discountPercentage) || 0,
       taxRatePercentage: Number(taxRatePercentage) || 0,
       expensesAmount: Number(expensesAmount) || 0,
@@ -399,20 +658,70 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Moneda</label>
+                    <label className="block font-semibold text-slate-700 mb-1">Moneda de Cotización</label>
                     <select
                       value={currency}
                       onChange={e => handleCurrencyChange(e.target.value as any)}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     >
-                      <option value="USD">USD ($ Dólar)</option>
-                      <option value="CLP">CLP ($ Peso Chileno)</option>
-                      <option value="MXN">MXN ($ Peso Mexicano)</option>
-                      <option value="EUR">EUR (€ Euro)</option>
-                      <option value="COP">COP ($ Peso Colombiano)</option>
+                      <option value="CLP">🇨🇱 CLP ($ - Pesos Chilenos) [Chile]</option>
+                      <option value="UF">🇨🇱 UF (Unidad de Fomento - Banco Central de Chile) [Chile]</option>
+                      <option value="MXN">🇲🇽 MXN ($ - Pesos Mexicanos) [México]</option>
+                      <option value="USD">🇺🇸 USD ($ - Dólares) [Uruguay, Brasil, Colombia]</option>
+                      <option value="EUR">🇪🇺 EUR (€ - Euros)</option>
+                      <option value="COP">🇨🇴 COP ($ - Pesos Colombianos)</option>
                     </select>
                   </div>
                 </div>
+
+                {/* Banner Oficial Banco Central de Chile cuando se selecciona UF */}
+                {currency === 'UF' && (
+                  <div className="mt-3 p-3 bg-blue-50/80 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-start gap-2.5">
+                    <Building2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap font-bold">
+                        <span>Banco Central de Chile:</span>
+                        <span className="font-mono text-blue-800 bg-white px-2 py-0.5 rounded border border-blue-200">
+                          1 UF = ${formatUfValue(getCachedBancoCentralData().indicators.uf.value)} CLP
+                        </span>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-semibold">
+                          Indicador Oficial BCCh
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-blue-800/90 leading-relaxed">
+                        Tarifas estándar SAP configuradas en UF (ej. Senior: ~2,20 UF/hr). La facturación se liquida en Pesos Chilenos (CLP) según el valor oficial de la UF a la fecha de emisión de cada factura.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Currency Change Alert Banner */}
+                {currencyChangePrompt && (
+                  <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs animate-in fade-in">
+                    <div className="flex items-center gap-2 text-blue-900">
+                      <RefreshCw className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span>
+                        Has cambiado la moneda a <strong>{currencyChangePrompt.next}</strong>. ¿Deseas adaptar automáticamente las tarifas horarias de los {resources.length} recursos según los benchmarks de mercado?
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleApplyBenchmarkRatesForCurrency}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
+                      >
+                        Actualizar Tarifas ({currencyChangePrompt.next})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCurrencyChangePrompt(null)}
+                        className="px-2.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium rounded-lg transition-colors cursor-pointer"
+                      >
+                        Mantener valores
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Client Info */}
@@ -517,15 +826,43 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
 
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
-                      País
+                      País de Operación
                     </label>
-                    <input
-                      type="text"
-                      value={country}
-                      onChange={e => setCountry(e.target.value)}
-                      placeholder="Chile, México, Colombia, etc."
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={country}
+                        onChange={e => setCountry(e.target.value)}
+                        placeholder="Chile, México, Uruguay, Brasil, Colombia..."
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      />
+                    </div>
+                    {/* Quick LatAm Country presets */}
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {[
+                        { name: 'Chile', curr: 'CLP', flag: '🇨🇱' },
+                        { name: 'México', curr: 'MXN', flag: '🇲🇽' },
+                        { name: 'Uruguay', curr: 'USD', flag: '🇺🇾' },
+                        { name: 'Brasil', curr: 'USD', flag: '🇧🇷' },
+                        { name: 'Colombia', curr: 'USD', flag: '🇨🇴' }
+                      ].map(item => (
+                        <button
+                          key={item.name}
+                          type="button"
+                          onClick={() => {
+                            setCountry(item.name);
+                            handleCurrencyChange(item.curr as any);
+                          }}
+                          className={`text-[10px] px-2 py-0.5 rounded-full border transition-all cursor-pointer ${
+                            country === item.name
+                              ? 'bg-blue-100 text-blue-800 border-blue-300 font-bold'
+                              : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                          }`}
+                        >
+                          {item.flag} {item.name} ({item.curr})
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -562,7 +899,23 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                     </label>
                     <select
                       value={projectType}
-                      onChange={e => setProjectType(e.target.value as any)}
+                      onChange={e => {
+                        const val = e.target.value as ProjectType;
+                        setProjectType(val);
+                        if (val === 'Proceso de Remuneraciones (Payroll)') {
+                          setPayrollEnabled(true);
+                          if (currency !== 'UF') handleCurrencyChange('UF');
+                          if (!projectTitle || projectTitle.startsWith('Rollout') || projectTitle === '') {
+                            setProjectTitle('Servicio de Proceso de Remuneraciones, Asistencia e Integración Contable');
+                          }
+                        } else if (val === 'Reclutamiento, Selección & Headhunting') {
+                          setRecruitmentEnabled(true);
+                          if (currency !== 'UF') handleCurrencyChange('UF');
+                          if (!projectTitle || projectTitle.startsWith('Rollout') || projectTitle === '') {
+                            setProjectTitle('Servicio de Reclutamiento, Selección y Headhunting Especializado SAP');
+                          }
+                        }
+                      }}
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     >
                       <option value="Roll-out de Módulos">Roll-out de Módulos (MM, LE, PM, QM, HCM)</option>
@@ -571,6 +924,8 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                       <option value="Soporte AMS / Bolsa de Horas">Soporte AMS / Bolsa de Horas Recurrente</option>
                       <option value="Fábrica ABAP / Fiori">Fábrica de Software ABAP & Fiori</option>
                       <option value="Auditoría & Optimización">Consultoría Especializada / Auditoría Basis & Seguridad</option>
+                      <option value="Proceso de Remuneraciones (Payroll)">💼 Proceso de Remuneraciones (Payroll Outsourcing)</option>
+                      <option value="Reclutamiento, Selección & Headhunting">🎯 Reclutamiento, Selección & Headhunting</option>
                     </select>
                   </div>
 
@@ -657,6 +1012,556 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* ========================================================================= */}
+              {/* SERVICIOS ESPECIALIZADOS: PROCESO DE REMUNERACIONES & HEADHUNTING */}
+              {/* ========================================================================= */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-5">
+                <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200 pb-3">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                      <Briefcase className="w-4 h-4 text-blue-600" />
+                      Servicios Especializados de Gestión de Personas / HR
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Cotización parametrizada en UF para Outsourcing de Remuneraciones y Procesos de Headhunting
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPayrollEnabled(!payrollEnabled)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                        payrollEnabled
+                          ? 'bg-blue-50 text-blue-700 border-blue-300 shadow-xs'
+                          : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                      }`}
+                    >
+                      <CheckSquare className={`w-3.5 h-3.5 ${payrollEnabled ? 'text-blue-600' : 'text-slate-400'}`} />
+                      <span>{payrollEnabled ? 'Remuneraciones Activo' : '+ Activar Remuneraciones'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setRecruitmentEnabled(!recruitmentEnabled)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                        recruitmentEnabled
+                          ? 'bg-indigo-50 text-indigo-700 border-indigo-300 shadow-xs'
+                          : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                      }`}
+                    >
+                      <CheckSquare className={`w-3.5 h-3.5 ${recruitmentEnabled ? 'text-indigo-600' : 'text-slate-400'}`} />
+                      <span>{recruitmentEnabled ? 'Headhunting Activo' : '+ Activar Headhunting'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 1. COTIZACIONES PARA SERVICIOS DE PROCESO DE REMUNERACIONES */}
+                {payrollEnabled && (
+                  <div className="bg-slate-50/70 border border-blue-200 rounded-xl p-4 space-y-4">
+                    <div className="flex items-center justify-between border-b border-blue-100 pb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
+                          1
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                            Cotización para Servicios de Proceso de Remuneraciones
+                          </h4>
+                          <span className="text-[10px] text-slate-500">
+                            Parámetros por dotación, control horario y desarrollos a medida
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-500 block">Subtotal Remuneraciones:</span>
+                        <span className="text-xs font-extrabold text-blue-900 font-mono">
+                          {formatUfValue(calculatedPayrollTotalUF)} UF
+                        </span>
+                        <span className="text-[10px] text-slate-500 block">
+                          ≈ $ {new Intl.NumberFormat('es-CL').format(convertUfToClp(calculatedPayrollTotalUF))} CLP
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Parametros principales: Remuneraciones y Asistencia */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Sub-block A: Pago de Remuneraciones */}
+                      <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                            <Users className="w-3.5 h-3.5 text-blue-600" />
+                            Pago de Remuneraciones
+                          </span>
+                          <span className="text-[11px] font-bold text-blue-700 font-mono">
+                            {formatUfValue(payrollSubtotalUF)} UF
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                              Personas a Procesar *
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={payrollHeadcount}
+                              onChange={e => setPayrollHeadcount(Math.max(1, Number(e.target.value) || 0))}
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                              placeholder="ej. 200"
+                            />
+                            <span className="text-[10px] text-slate-400 mt-0.5 block">Colaboradores</span>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                              UF / Persona *
+                            </label>
+                            <input
+                              type="number"
+                              min="0.001"
+                              step="0.01"
+                              value={payrollRatePerPersonUF}
+                              onChange={e => setPayrollRatePerPersonUF(Math.max(0, Number(e.target.value) || 0))}
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                              placeholder="0.12"
+                            />
+                            <span className="text-[10px] text-slate-400 mt-0.5 block">
+                              ≈ $ {new Intl.NumberFormat('es-CL').format(convertUfToClp(payrollRatePerPersonUF))} CLP
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Sub-block B: Control de Asistencia */}
+                      <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-blue-600" />
+                            Control de Asistencia
+                          </span>
+                          <span className="text-[11px] font-bold text-blue-700 font-mono">
+                            {formatUfValue(attendanceSubtotalUF)} UF
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                              Personas Control Asistencia *
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={attendanceHeadcount}
+                              onChange={e => setAttendanceHeadcount(Math.max(0, Number(e.target.value) || 0))}
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                              placeholder="ej. 200"
+                            />
+                            <span className="text-[10px] text-slate-400 mt-0.5 block">Colaboradores</span>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                              UF / Persona *
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={attendanceRatePerPersonUF}
+                              onChange={e => setAttendanceRatePerPersonUF(Math.max(0, Number(e.target.value) || 0))}
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                              placeholder="0.05"
+                            />
+                            <span className="text-[10px] text-slate-400 mt-0.5 block">
+                              ≈ $ {new Intl.NumberFormat('es-CL').format(convertUfToClp(attendanceRatePerPersonUF))} CLP
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sub-block C: Otros servicios desarrollados a medida */}
+                    <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div>
+                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <Layers className="w-3.5 h-3.5 text-blue-600" />
+                            Otros Servicios Desarrollados a Medida
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            Por ejemplo: contabilización de remuneraciones para otros sistemas ERP, interfaces bancarias o reportes DT
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleAddCustomPayrollService('Nuevo Desarrollo / Interfaz a Medida', 25)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors flex items-center gap-1 cursor-pointer border border-blue-200"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Agregar Servicio</span>
+                        </button>
+                      </div>
+
+                      {/* Presets rápidos */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {[
+                          { name: 'Contabilización de remuneraciones para otros sistemas (SAP FI / ERP)', uf: 32 },
+                          { name: 'Generación automática archivo Previred y dispersión masiva de bancos', uf: 18 },
+                          { name: 'Portal de autoservicio de liquidaciones y certificados de antigüedad', uf: 24 },
+                          { name: 'Declaración Jurada Anual DJ 1887 y Libro de Remuneraciones DT (LRE)', uf: 20 }
+                        ].map((preset, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleAddCustomPayrollService(preset.name, preset.uf)}
+                            className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 text-slate-600 border border-slate-200 transition-colors cursor-pointer"
+                          >
+                            + {preset.name.split('(')[0].trim()} ({preset.uf} UF)
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Lista de servicios a medida */}
+                      {customPayrollServices.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 italic py-2 text-center">
+                          No hay servicios adicionales configurados. Utilice los botones superiores para agregar desarrollos a medida.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {customPayrollServices.map((cs) => (
+                            <div
+                              key={cs.id}
+                              className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center text-xs"
+                            >
+                              <div className="sm:col-span-6">
+                                <label className="text-[10px] text-slate-500 block">Nombre / Descripción del Servicio a Medida</label>
+                                <input
+                                  type="text"
+                                  value={cs.name}
+                                  onChange={e => handleUpdateCustomPayrollService(cs.id, { name: e.target.value })}
+                                  placeholder="ej. Contabilización de remuneraciones para otros sistemas"
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded font-medium text-slate-800 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                                />
+                              </div>
+
+                              <div className="sm:col-span-2">
+                                <label className="text-[10px] text-slate-500 block">Cantidad</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={cs.quantity}
+                                  onChange={e => handleUpdateCustomPayrollService(cs.id, { quantity: Number(e.target.value) || 0 })}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded font-medium text-right text-slate-800 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                                />
+                              </div>
+
+                              <div className="sm:col-span-2">
+                                <label className="text-[10px] text-slate-500 block">UF / Unidad</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.5"
+                                  value={cs.unitPriceUF}
+                                  onChange={e => handleUpdateCustomPayrollService(cs.id, { unitPriceUF: Number(e.target.value) || 0 })}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded font-mono font-medium text-right text-slate-800 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                                />
+                              </div>
+
+                              <div className="sm:col-span-2 flex items-center justify-between pl-1">
+                                <div className="text-right">
+                                  <span className="text-[9px] text-slate-400 block">Subtotal</span>
+                                  <span className="font-mono font-bold text-blue-900 text-xs">
+                                    {formatUfValue(cs.subtotalUF)} UF
+                                  </span>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCustomPayrollService(cs.id)}
+                                  className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50 transition-colors ml-1 cursor-pointer"
+                                  title="Eliminar servicio a medida"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. COTIZACIONES PARA SERVICIOS DE RECLUTAMIENTO, SELECCIÓN / HEADHUNTING */}
+                {recruitmentEnabled && (
+                  <div className="bg-slate-50/70 border border-indigo-200 rounded-xl p-4 space-y-4">
+                    <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
+                          2
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                            Cotización para Servicios de Reclutamiento, Selección / Headhunting
+                          </h4>
+                          <span className="text-[10px] text-slate-500">
+                            Procesos de hunting, fee sobre renta bruta y actividades por UF
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-500 block">Subtotal Headhunting:</span>
+                        <span className="text-xs font-extrabold text-indigo-900 font-mono">
+                          {formatUfValue(calculatedRecruitmentTotalUF)} UF
+                        </span>
+                        <span className="text-[10px] text-slate-500 block">
+                          ≈ $ {new Intl.NumberFormat('es-CL').format(convertUfToClp(calculatedRecruitmentTotalUF))} CLP
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Proceso y Costo una renta Bruta */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Proceso */}
+                      <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs space-y-2">
+                        <label className="block text-xs font-bold text-slate-800">
+                          Definición del Proceso *
+                        </label>
+                        <input
+                          type="text"
+                          value={recruitmentProcessType}
+                          onChange={e => setRecruitmentProcessType(e.target.value)}
+                          placeholder="ej. Proceso Hunting"
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        />
+
+                        {/* Presets rápidos */}
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {[
+                            'Proceso Hunting',
+                            'Búsqueda Ejecutiva C-Level',
+                            'Headhunting Consultor SAP Senior',
+                            'Selección Masiva Especializada'
+                          ].map(preset => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => setRecruitmentProcessType(preset)}
+                              className={`text-[10px] px-2 py-0.5 rounded-full border transition-all cursor-pointer ${
+                                recruitmentProcessType === preset
+                                  ? 'bg-indigo-100 text-indigo-800 border-indigo-300 font-bold'
+                                  : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                              }`}
+                            >
+                              {preset}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Costo una Renta Bruta ($) */}
+                      <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={includeGrossSalaryFee}
+                              onChange={e => setIncludeGrossSalaryFee(e.target.checked)}
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span>Costo una Renta Bruta ($ / Success Fee)</span>
+                          </label>
+
+                          {includeGrossSalaryFee && (
+                            <span className="text-[11px] font-bold text-indigo-700 font-mono">
+                              {formatUfValue(calculatedRecruitmentGrossFeeUF)} UF
+                            </span>
+                          )}
+                        </div>
+
+                        {includeGrossSalaryFee ? (
+                          <div className="grid grid-cols-12 gap-2 text-xs">
+                            <div className="col-span-6">
+                              <label className="text-[10px] text-slate-500 block mb-0.5">Renta Bruta ($)</label>
+                              <div className="flex rounded-md shadow-xs">
+                                <span className="inline-flex items-center px-2 rounded-l-md border border-r-0 border-slate-300 bg-slate-50 text-slate-500 text-[11px]">
+                                  $
+                                </span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="50000"
+                                  value={grossSalaryAmount}
+                                  onChange={e => setGrossSalaryAmount(Math.max(0, Number(e.target.value) || 0))}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded-r-md font-mono text-slate-900 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                  placeholder="3500000"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="col-span-3">
+                              <label className="text-[10px] text-slate-500 block mb-0.5">Moneda</label>
+                              <select
+                                value={grossSalaryCurrency}
+                                onChange={e => setGrossSalaryCurrency(e.target.value as any)}
+                                className="w-full px-1.5 py-1 bg-white border border-slate-300 rounded font-medium text-slate-800 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                              >
+                                <option value="CLP">CLP ($)</option>
+                                <option value="UF">UF</option>
+                                <option value="USD">USD ($)</option>
+                              </select>
+                            </div>
+
+                            <div className="col-span-3">
+                              <label className="text-[10px] text-slate-500 block mb-0.5">% Fee</label>
+                              <input
+                                type="number"
+                                min="1"
+                                max="200"
+                                value={grossSalaryFeePercentage}
+                                onChange={e => setGrossSalaryFeePercentage(Number(e.target.value) || 100)}
+                                className="w-full px-1.5 py-1 bg-white border border-slate-300 rounded text-right font-medium text-slate-800 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                              />
+                            </div>
+
+                            <div className="col-span-12 text-[10px] text-slate-500 flex justify-between pt-0.5">
+                              <span>Fee de éxito: {grossSalaryFeePercentage}% de 1 renta bruta mensual</span>
+                              <span className="font-mono text-indigo-800 font-semibold">
+                                ≈ {formatUfValue(calculatedRecruitmentGrossFeeUF)} UF (BCCh: ${formatUfValue(getCachedBancoCentralData().indicators.uf.value)})
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-400 italic">
+                            No se cobra fee porcentual de renta bruta. La cotización se calculará exclusivamente por actividades específicas en UF.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actividad de Entrevistas varias o Descripción de Cargo (UF / Actividad) */}
+                    <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div>
+                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+                            Actividad de Entrevistas varias o Descripción de Cargo
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            Tarifas cotizadas por UF / Actividad (evaluaciones, levantamiento de perfil y entrevistas)
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleAddRecruitmentActivity('Nueva Actividad de Selección', 2.5)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors flex items-center gap-1 cursor-pointer border border-indigo-200"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Agregar Actividad</span>
+                        </button>
+                      </div>
+
+                      {/* Presets de actividades */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {[
+                          { name: 'Descripción de Cargo / Levantamiento de Perfil y Competencias', uf: 4.5 },
+                          { name: 'Actividad de Entrevistas varias (Entrevistas psicolaborales por competencias)', uf: 2.5 },
+                          { name: 'Evaluación Técnica SAP / Pruebas de Habilidades Específicas', uf: 3.5 },
+                          { name: 'Informe Psicolaboral Integral & Validación de Referencias Laborales', uf: 3.0 },
+                          { name: 'Batería de Tests Psicométricos / Assessment Center', uf: 5.0 }
+                        ].map((preset, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleAddRecruitmentActivity(preset.name, preset.uf)}
+                            className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 text-slate-600 border border-slate-200 transition-colors cursor-pointer"
+                          >
+                            + {preset.name.split('/')[0].split('(')[0].trim()} ({preset.uf} UF/act)
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Tabla de actividades */}
+                      {recruitmentActivities.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 italic py-2 text-center">
+                          No hay actividades configuradas. Utilice los botones superiores para agregar actividades en UF.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {recruitmentActivities.map((act) => (
+                            <div
+                              key={act.id}
+                              className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center text-xs"
+                            >
+                              <div className="sm:col-span-6">
+                                <label className="text-[10px] text-slate-500 block">Actividad de Entrevistas / Levantamiento</label>
+                                <input
+                                  type="text"
+                                  value={act.activityName}
+                                  onChange={e => handleUpdateRecruitmentActivity(act.id, { activityName: e.target.value })}
+                                  placeholder="ej. Entrevistas varias o Descripción de Cargo"
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded font-medium text-slate-800 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                />
+                              </div>
+
+                              <div className="sm:col-span-2">
+                                <label className="text-[10px] text-slate-500 block">Cantidad</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={act.quantity}
+                                  onChange={e => handleUpdateRecruitmentActivity(act.id, { quantity: Number(e.target.value) || 0 })}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded font-medium text-right text-slate-800 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                />
+                              </div>
+
+                              <div className="sm:col-span-2">
+                                <label className="text-[10px] text-slate-500 block">UF / Actividad</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.1"
+                                  value={act.ratePerActivityUF}
+                                  onChange={e => handleUpdateRecruitmentActivity(act.id, { ratePerActivityUF: Number(e.target.value) || 0 })}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded font-mono font-medium text-right text-slate-800 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                />
+                              </div>
+
+                              <div className="sm:col-span-2 flex items-center justify-between pl-1">
+                                <div className="text-right">
+                                  <span className="text-[9px] text-slate-400 block">Subtotal</span>
+                                  <span className="font-mono font-bold text-indigo-900 text-xs">
+                                    {formatUfValue(act.subtotalUF)} UF
+                                  </span>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRecruitmentActivity(act.id)}
+                                  className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50 transition-colors ml-1 cursor-pointer"
+                                  title="Eliminar actividad"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -729,8 +1634,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                             value={res.seniority}
                             onChange={e => {
                               const newSeniority = e.target.value as SeniorityLevel;
-                              const catalog = SAP_CATALOG_MODULES.find(m => m.code === res.moduleCode);
-                              const newRate = catalog ? catalog.benchmarkRatesUSD[newSeniority] : res.hourlyRate;
+                              const newRate = getBenchmarkRate(res.moduleCode, newSeniority, currency);
                               handleUpdateResource(res.id, { 
                                 seniority: newSeniority,
                                 hourlyRate: newRate
@@ -950,9 +1854,14 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      Impuestos / Tasa de IVA (%)
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block font-semibold text-slate-700">
+                        Impuestos / Tasa de IVA (%)
+                      </label>
+                      <span className="text-[11px] text-slate-500">
+                        {taxRatePercentage === 19 ? 'Chile: 19% IVA' : taxRatePercentage === 16 ? 'México: 16% IVA' : taxRatePercentage === 0 ? 'Exportación Exenta (0%)' : `${taxRatePercentage}%`}
+                      </span>
+                    </div>
                     <input
                       type="number"
                       min="0"
@@ -962,6 +1871,35 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                       placeholder="19 (Chile), 16 (México), 0 (Exento)"
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium"
                     />
+                    <div className="flex gap-1.5 mt-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setTaxRatePercentage(19)}
+                        className={`text-[10px] px-2 py-0.5 rounded border ${
+                          taxRatePercentage === 19 ? 'bg-blue-100 text-blue-800 border-blue-300 font-bold' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        19% (Chile)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTaxRatePercentage(16)}
+                        className={`text-[10px] px-2 py-0.5 rounded border ${
+                          taxRatePercentage === 16 ? 'bg-blue-100 text-blue-800 border-blue-300 font-bold' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        16% (México)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTaxRatePercentage(0)}
+                        className={`text-[10px] px-2 py-0.5 rounded border ${
+                          taxRatePercentage === 0 ? 'bg-blue-100 text-blue-800 border-blue-300 font-bold' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        0% (Exportación)
+                      </button>
+                    </div>
                   </div>
 
                   <div>
@@ -1021,12 +1959,38 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                           {formatCurrency(previewTotals.averageHourlyRate, currency, currencySymbol)}/hr
                         </span>
                       </div>
-                      <div className="flex justify-between text-slate-600">
-                        <span>Subtotal Horas Consultoría:</span>
-                        <span className="font-bold text-slate-900">
-                          {formatCurrency(previewTotals.subtotalConsulting, currency, currencySymbol)}
-                        </span>
-                      </div>
+                      {previewTotals.subtotalConsulting > 0 && (
+                        <div className="flex justify-between text-slate-600">
+                          <span>Subtotal Horas Consultoría:</span>
+                          <span className="font-bold text-slate-900">
+                            {formatCurrency(previewTotals.subtotalConsulting, currency, currencySymbol)}
+                          </span>
+                        </div>
+                      )}
+
+                      {previewTotals.subtotalPayroll > 0 && (
+                        <div className="flex justify-between text-blue-800 bg-blue-50/70 px-2.5 py-1.5 rounded-lg border border-blue-100">
+                          <span className="flex items-center gap-1.5 font-semibold">
+                            <Briefcase className="w-3.5 h-3.5 text-blue-600" />
+                            Servicio Remuneraciones (Payroll):
+                          </span>
+                          <span className="font-bold font-mono">
+                            {formatCurrency(previewTotals.subtotalPayroll, currency, currencySymbol)}
+                          </span>
+                        </div>
+                      )}
+
+                      {previewTotals.subtotalRecruitment > 0 && (
+                        <div className="flex justify-between text-indigo-800 bg-indigo-50/70 px-2.5 py-1.5 rounded-lg border border-indigo-100">
+                          <span className="flex items-center gap-1.5 font-semibold">
+                            <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+                            Servicio Reclutamiento / Headhunting:
+                          </span>
+                          <span className="font-bold font-mono">
+                            {formatCurrency(previewTotals.subtotalRecruitment, currency, currencySymbol)}
+                          </span>
+                        </div>
+                      )}
 
                       {previewTotals.discountAmount > 0 && (
                         <div className="flex justify-between text-emerald-700 font-semibold">
@@ -1057,6 +2021,24 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                         <span>Total de la Oferta:</span>
                         <span>{formatCurrency(previewTotals.totalAmount, currency, currencySymbol)}</span>
                       </div>
+
+                      {/* Conversión cruzada de referencia Banco Central */}
+                      {currency === 'UF' && (
+                        <div className="bg-blue-50/70 p-2.5 rounded-lg border border-blue-100 flex items-center justify-between text-[11px]">
+                          <span className="text-blue-800 font-medium">Equivalente estimado en CLP:</span>
+                          <span className="font-mono font-bold text-blue-900">
+                            ≈ $ {new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(convertUfToClp(previewTotals.totalAmount))} CLP
+                          </span>
+                        </div>
+                      )}
+                      {currency === 'CLP' && (
+                        <div className="bg-slate-100/70 p-2.5 rounded-lg border border-slate-200 flex items-center justify-between text-[11px]">
+                          <span className="text-slate-600 font-medium">Equivalente estimado en UF:</span>
+                          <span className="font-mono font-bold text-slate-800">
+                            ≈ UF {formatUfValue(convertClpToUf(previewTotals.totalAmount))}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 

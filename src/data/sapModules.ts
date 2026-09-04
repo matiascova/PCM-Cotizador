@@ -1,4 +1,5 @@
 import { SapModuleCode, SeniorityLevel } from '../types';
+import { getBenchmarkRate, SupportedCurrency } from '../utils/currencies';
 
 export interface SapCatalogModule {
   code: SapModuleCode;
@@ -9,6 +10,14 @@ export interface SapCatalogModule {
   defaultResponsibilities: string;
   typicalDeliverables: string[];
   benchmarkRatesUSD: Record<SeniorityLevel, number>;
+}
+
+export function getModuleBenchmarkRate(
+  moduleCode: SapModuleCode,
+  seniority: SeniorityLevel,
+  currency: string = 'USD'
+): number {
+  return getBenchmarkRate(moduleCode, seniority, currency);
 }
 
 export const SAP_CATALOG_MODULES: SapCatalogModule[] = [

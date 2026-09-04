@@ -25,6 +25,7 @@ import {
 import { Quotation, QuotationStatus, QuotationStatusLog } from '../types';
 import { calculateQuotationTotals, formatCurrency, getStatusBadge } from '../utils/calculations';
 import { downloadQuotationPDF } from '../utils/pdfGenerator';
+import { convertUfToClp, convertClpToUf, formatUfValue } from '../services/bcentralService';
 
 interface QuotationDetailModalProps {
   quote: Quotation;
@@ -121,6 +122,9 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
               <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 ${statusBadge.bg} ${statusBadge.text} ${statusBadge.border}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${statusBadge.dotColor}`} />
                 {statusBadge.label}
+              </span>
+              <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 flex items-center gap-1">
+                <span>{quote.currency === 'UF' ? '🇨🇱 UF' : quote.currency === 'CLP' ? '🇨🇱 CLP' : quote.currency === 'MXN' ? '🇲🇽 MXN' : '🇺🇸 USD'}</span>
               </span>
               <span className="text-xs text-slate-400">
                 Creada: {quote.createdAt}
@@ -341,6 +345,16 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
                     {formatCurrency(totals.totalAmount, quote.currency, quote.currencySymbol)}
                   </p>
                   <span className="text-[11px] text-blue-700">Incluye {quote.taxRatePercentage}% IVA</span>
+                  {quote.currency === 'UF' && (
+                    <div className="mt-1.5 pt-1.5 border-t border-blue-200/60 text-[10px] font-mono text-blue-900 font-bold">
+                      ≈ $ {new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(convertUfToClp(totals.totalAmount))} CLP (BCCh)
+                    </div>
+                  )}
+                  {quote.currency === 'CLP' && (
+                    <div className="mt-1.5 pt-1.5 border-t border-blue-200/60 text-[10px] font-mono text-slate-700 font-bold">
+                      ≈ UF {formatUfValue(convertClpToUf(totals.totalAmount))}
+                    </div>
+                  )}
                 </div>
               </div>
 

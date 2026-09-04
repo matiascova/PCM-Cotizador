@@ -12,11 +12,13 @@ import {
   Server, 
   Cpu, 
   Settings,
-  Plus
+  Plus,
+  Globe2
 } from 'lucide-react';
 import { SAP_CATALOG_MODULES } from '../data/sapModules';
-import { SapModuleCode } from '../types';
+import { SapModuleCode, SeniorityLevel } from '../types';
 import { formatCurrency } from '../utils/calculations';
+import { getBenchmarkRate, SupportedCurrency, CURRENCIES } from '../utils/currencies';
 
 interface ResourceMasterViewProps {
   onNewQuoteWithModule?: (moduleCode: SapModuleCode) => void;
@@ -26,6 +28,7 @@ export const ResourceMasterView: React.FC<ResourceMasterViewProps> = ({
   onNewQuoteWithModule
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCurrency, setSelectedCurrency] = useState<SupportedCurrency>('CLP');
 
   const filteredModules = SAP_CATALOG_MODULES.filter(m => 
     m.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -38,34 +41,69 @@ export const ResourceMasterView: React.FC<ResourceMasterViewProps> = ({
       {/* Top Banner */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            Resource Master & Staffing Matrix
-          </span>
-          <h2 className="text-xl font-bold text-slate-900 mt-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              Resource Master & Staffing Matrix
+            </span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+              <Globe2 className="w-3 h-3" />
+              Chile, México, Uruguay, Brasil, Colombia
+            </span>
+          </div>
+          <h2 className="text-xl font-bold text-slate-900">
             Catálogo Estándar de Recursos y Perfiles SAP
           </h2>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-            Perfiles especializados requeridos para la ejecución de proyectos SAP S/4HANA: HCM, MM, LE, PM, QM, ABAP, Basis y Seguridad.
+            Perfiles especializados requeridos para la consultoría y ejecución de proyectos SAP S/4HANA: HCM, MM, LE, PM, QM, ABAP, Basis y Seguridad.
           </p>
         </div>
 
-        {/* Search */}
-        <div className="relative w-full md:w-72">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            placeholder="Buscar módulo o perfil..."
-            className="w-full text-xs pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-          />
+        {/* Currency Switcher & Search */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          {/* Currency Tabs */}
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+            {[
+              { id: 'CLP', label: '🇨🇱 CLP' },
+              { id: 'UF', label: '🇨🇱 UF' },
+              { id: 'MXN', label: '🇲🇽 MXN' },
+              { id: 'USD', label: '🇺🇸 USD' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setSelectedCurrency(tab.id as SupportedCurrency)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  selectedCurrency === tab.id
+                    ? 'bg-white text-blue-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Search */}
+          <div className="relative w-full sm:w-60">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Buscar módulo o perfil..."
+              className="w-full text-xs pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+            />
+          </div>
         </div>
       </div>
 
       {/* Grid of Resource Modules */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filteredModules.map(mod => {
-          const seniorRate = mod.benchmarkRatesUSD['Senior'] || 90;
+          const seniorRate = getBenchmarkRate(mod.code, 'Senior', selectedCurrency);
+          const leadRate = getBenchmarkRate(mod.code, 'Lead / Arquitecto', selectedCurrency);
+          const ssRate = getBenchmarkRate(mod.code, 'Semi-Senior', selectedCurrency);
+
           return (
             <div
               key={mod.code}
@@ -76,8 +114,8 @@ export const ResourceMasterView: React.FC<ResourceMasterViewProps> = ({
                   <span className="text-xs font-mono font-bold px-2.5 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200">
                     {mod.code}
                   </span>
-                  <span className="text-[11px] font-bold text-slate-500 font-mono">
-                    Tarifa Ref: {formatCurrency(seniorRate, 'USD', '$')}/hr
+                  <span className="text-xs font-bold text-slate-800 font-mono bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                    {formatCurrency(seniorRate, selectedCurrency)}/hr (Sr)
                   </span>
                 </div>
 
@@ -88,8 +126,20 @@ export const ResourceMasterView: React.FC<ResourceMasterViewProps> = ({
                   {mod.description}
                 </p>
 
-                {/* Sub-roles / Deliverables */}
-                <div className="mt-4 pt-4 border-t border-slate-100">
+                {/* Rates matrix by Seniority in selected currency */}
+                <div className="mt-3 p-2.5 bg-slate-50 rounded-xl border border-slate-200/80 text-[11px] font-mono">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1 font-sans">
+                    Matriz Tarifaria ({selectedCurrency})
+                  </span>
+                  <div className="grid grid-cols-2 gap-1 text-slate-700">
+                    <div>Semi-Sr: <strong className="text-slate-900">{formatCurrency(ssRate, selectedCurrency)}</strong></div>
+                    <div>Senior: <strong className="text-blue-700">{formatCurrency(seniorRate, selectedCurrency)}</strong></div>
+                    <div className="col-span-2">Lead / Arq: <strong className="text-slate-900">{formatCurrency(leadRate, selectedCurrency)}</strong></div>
+                  </div>
+                </div>
+
+                {/* Typical Deliverables */}
+                <div className="mt-4 pt-3 border-t border-slate-100">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">
                     Alcance Típico
                   </span>
@@ -120,6 +170,23 @@ export const ResourceMasterView: React.FC<ResourceMasterViewProps> = ({
             </div>
           );
         })}
+      </div>
+
+      {/* Operations Info Footer */}
+      <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+        <div className="flex items-center gap-2">
+          <Globe2 className="w-4 h-4 text-blue-600 shrink-0" />
+          <span>
+            <strong>Oficina Central Santiago de Chile:</strong> Servicios de consultoría SAP prestados para clientes en Chile (CLP), México (MXN), y Uruguay, Brasil y Colombia (USD).
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500 shrink-0">
+          <span>IVA Chile: 19%</span>
+          <span>•</span>
+          <span>IVA México: 16%</span>
+          <span>•</span>
+          <span>Exportación LatAm: 0% Exento</span>
+        </div>
       </div>
     </div>
   );

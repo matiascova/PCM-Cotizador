@@ -16,6 +16,7 @@ import {
   Layers, 
   Users, 
   DollarSign, 
+  Coins,
   LayoutGrid, 
   List, 
   ChevronRight,
@@ -50,6 +51,7 @@ export const QuotationList: React.FC<QuotationListProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [moduleFilter, setModuleFilter] = useState<string>('all');
+  const [currencyFilter, setCurrencyFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'pipeline'>('grid');
 
   // Filtering
@@ -57,7 +59,8 @@ export const QuotationList: React.FC<QuotationListProps> = ({
     const matchesSearch = 
       q.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
       q.client.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      q.project.projectTitle.toLowerCase().includes(searchTerm.toLowerCase());
+      q.project.projectTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (q.client.country && q.client.country.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesStatus = statusFilter === 'all' || q.status === statusFilter;
 
@@ -65,7 +68,9 @@ export const QuotationList: React.FC<QuotationListProps> = ({
       moduleFilter === 'all' || 
       q.resources.some(r => r.moduleCode === moduleFilter || r.moduleName.toLowerCase().includes(moduleFilter.toLowerCase()));
 
-    return matchesSearch && matchesStatus && matchesModule;
+    const matchesCurrency = currencyFilter === 'all' || q.currency === currencyFilter;
+
+    return matchesSearch && matchesStatus && matchesModule && matchesCurrency;
   });
 
   // Status Counts for Filters
@@ -102,8 +107,25 @@ export const QuotationList: React.FC<QuotationListProps> = ({
             />
           </div>
 
-          {/* Module Filter & View Toggle */}
+          {/* Module, Currency Filter & View Toggle */}
           <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Currency Filter */}
+            <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+              <DollarSign className="w-3.5 h-3.5 text-slate-400" />
+              <span>Moneda:</span>
+              <select
+                value={currencyFilter}
+                onChange={e => setCurrencyFilter(e.target.value)}
+                className="bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+              >
+                <option value="all">Todas las Monedas</option>
+                <option value="CLP">🇨🇱 CLP (Pesos Chilenos)</option>
+                <option value="MXN">🇲🇽 MXN (Pesos Mexicanos)</option>
+                <option value="USD">🇺🇸 USD (Dólares)</option>
+              </select>
+            </div>
+
+            {/* Module Filter */}
             <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
               <Filter className="w-3.5 h-3.5 text-slate-400" />
               <span>Módulo:</span>
@@ -121,6 +143,23 @@ export const QuotationList: React.FC<QuotationListProps> = ({
                 <option value="DEV_ABAP">Desarrollador ABAP</option>
                 <option value="SAP_BASIS">Consultor Basis</option>
                 <option value="SAP_SECURITY">Seguridad & Roles</option>
+              </select>
+            </div>
+
+            {/* Currency Filter */}
+            <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+              <Coins className="w-3.5 h-3.5 text-slate-400" />
+              <span>Moneda:</span>
+              <select
+                value={currencyFilter}
+                onChange={e => setCurrencyFilter(e.target.value)}
+                className="bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+              >
+                <option value="all">Todas las Monedas</option>
+                <option value="UF">🇨🇱 UF (Unidad de Fomento)</option>
+                <option value="CLP">🇨🇱 CLP (Pesos Chilenos)</option>
+                <option value="USD">🇺🇸 USD (Dólares)</option>
+                <option value="MXN">🇲🇽 MXN (Pesos Mexicanos)</option>
               </select>
             </div>
 
@@ -224,11 +263,23 @@ export const QuotationList: React.FC<QuotationListProps> = ({
                         </span>
                       </div>
 
-                      {/* Client Name */}
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 line-clamp-1">
-                        <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                        <span>{quote.client.companyName}</span>
+                      {/* Client Name & Currency Badge */}
+                      <div className="flex items-center justify-between gap-1.5 text-xs font-bold text-slate-900">
+                        <div className="flex items-center gap-1.5 line-clamp-1">
+                          <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                          <span>{quote.client.companyName}</span>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 shrink-0 flex items-center gap-1">
+                          <span>{quote.currency === 'UF' ? '🇨🇱 UF' : quote.currency === 'CLP' ? '🇨🇱' : quote.currency === 'MXN' ? '🇲🇽' : '🇺🇸'}</span>
+                          <span>{quote.currency}</span>
+                        </span>
                       </div>
+
+                      {quote.client.country && (
+                        <span className="text-[11px] text-slate-500 block mt-0.5 font-normal">
+                          📍 {quote.client.country}
+                        </span>
+                      )}
 
                       {/* Project Title */}
                       <h3 className="text-sm font-bold text-slate-900 group-hover:text-blue-700 transition-colors mt-2 line-clamp-2 leading-snug">
@@ -347,8 +398,13 @@ export const QuotationList: React.FC<QuotationListProps> = ({
             { id: 'negotiation', title: 'En Negociación / Ajustes', color: 'border-amber-400 bg-amber-50/40' },
             { id: 'approved', title: 'Aprobada (A Ejecución)', color: 'border-emerald-400 bg-emerald-50/40' }
           ].map(stage => {
-            const stageQuotes = quotations.filter(q => q.status === stage.id);
-            const stageTotal = stageQuotes.reduce((sum, q) => sum + calculateQuotationTotals(q).totalAmount, 0);
+            const stageQuotes = filteredQuotes.filter(q => q.status === stage.id);
+            // Group stage totals by currency
+            const stageCurrencies = stageQuotes.reduce((acc, q) => {
+              const curr = q.currency || 'USD';
+              acc[curr] = (acc[curr] || 0) + calculateQuotationTotals(q).totalAmount;
+              return acc;
+            }, {} as Record<string, number>);
 
             return (
               <div key={stage.id} className="bg-slate-100/80 rounded-2xl p-3 border border-slate-200 flex flex-col max-h-[75vh]">
@@ -357,9 +413,17 @@ export const QuotationList: React.FC<QuotationListProps> = ({
                     <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                       {stage.title}
                     </h4>
-                    <span className="text-[11px] text-slate-500 font-medium">
-                      {formatCurrency(stageTotal, 'USD', '$')}
-                    </span>
+                    <div className="text-[10px] text-slate-600 font-mono space-y-0.5 mt-0.5">
+                      {Object.keys(stageCurrencies).length > 0 ? (
+                        Object.entries(stageCurrencies).map(([curr, amt]) => (
+                          <div key={curr} className="font-semibold">
+                            {formatCurrency(Number(amt) || 0, curr)}
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-slate-400">0 propuestas</span>
+                      )}
+                    </div>
                   </div>
                   <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white text-slate-700 shadow-xs">
                     {stageQuotes.length}
@@ -380,9 +444,14 @@ export const QuotationList: React.FC<QuotationListProps> = ({
                           <span className="text-slate-400">{quote.createdAt}</span>
                         </div>
 
-                        <h5 className="text-xs font-bold text-slate-900 line-clamp-1">
-                          {quote.client.companyName}
-                        </h5>
+                        <div className="flex items-center justify-between gap-1">
+                          <h5 className="text-xs font-bold text-slate-900 line-clamp-1">
+                            {quote.client.companyName}
+                          </h5>
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono shrink-0">
+                            {quote.currency === 'UF' ? '🇨🇱 UF' : quote.currency === 'CLP' ? '🇨🇱' : quote.currency === 'MXN' ? '🇲🇽' : '🇺🇸'} {quote.currency}
+                          </span>
+                        </div>
 
                         <p className="text-[11px] text-slate-600 line-clamp-2">
                           {quote.project.projectTitle}

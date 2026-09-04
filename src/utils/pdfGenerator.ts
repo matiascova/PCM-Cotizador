@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Quotation } from '../types';
 import { calculateQuotationTotals, formatCurrency } from './calculations';
+import { convertUfToClp } from '../services/bcentralService';
 
 export function generateQuotationPDF(quote: Quotation): jsPDF {
   const doc = new jsPDF({
@@ -14,7 +15,8 @@ export function generateQuotationPDF(quote: Quotation): jsPDF {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 15;
-  let currentY = 18;
+  const availableWidth = pageWidth - (margin * 2);
+  let currentY = 16;
 
   // Primary Colors (SAP Navy & Slate)
   const primaryNavy: [number, number, number] = [15, 44, 89]; // #0F2C59
@@ -23,104 +25,187 @@ export function generateQuotationPDF(quote: Quotation): jsPDF {
   const textGray: [number, number, number] = [100, 116, 139]; // #64748B
   const bgLight: [number, number, number] = [248, 250, 252]; // #F8FAFC
 
+  // ==========================================
   // Header Banner
+  // ==========================================
   doc.setFillColor(...primaryNavy);
-  doc.rect(margin, currentY, pageWidth - (margin * 2), 24, 'F');
+  doc.rect(margin, currentY, availableWidth, 24, 'F');
 
   // Accent Line
   doc.setFillColor(...accentBlue);
-  doc.rect(margin, currentY + 24, pageWidth - (margin * 2), 2, 'F');
+  doc.rect(margin, currentY + 24, availableWidth, 2, 'F');
 
   // Title in Header
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.text('PROPUESTA TÉCNICO-COMERCIAL | CONSULTORÍA SAP', margin + 6, currentY + 11);
+  doc.setFontSize(13);
+  doc.text('PROPUESTA TÉCNICO-COMERCIAL | CONSULTORÍA SAP', margin + 6, currentY + 10);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text('Soluciones Empresariales SAP & Servicios de Transformación Digital', margin + 6, currentY + 18);
+  doc.setFontSize(8.5);
+  doc.text('Soluciones Empresariales SAP & Servicios de Transformación Digital', margin + 6, currentY + 17);
 
   // Quote Code Badge in Header
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text(quote.code, pageWidth - margin - 6, currentY + 11, { align: 'right' });
+  doc.text(quote.code, pageWidth - margin - 6, currentY + 10, { align: 'right' });
   doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text(`Versión ${quote.version} | Emisión: ${quote.createdAt}`, pageWidth - margin - 6, currentY + 17, { align: 'right' });
+
+  currentY += 32;
+
+  // ==========================================
+  // Metadata Grid: Client & Offer Details
+  // (Prevents horizontal and vertical overlap)
+  // ==========================================
+  const colGap = 6;
+  const colWidth = (availableWidth - colGap) / 2; // ~87mm
+  const innerPadX = 4.5;
+  const innerPadY = 4.5;
+  const innerTextWidth = colWidth - (innerPadX * 2); // ~78mm
+
+  const leftBoxX = margin;
+  const rightBoxX = margin + colWidth + colGap;
+
+  // Prepare Left Box Items (Client Info)
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.text(`Versión ${quote.version} | Emisión: ${quote.createdAt}`, pageWidth - margin - 6, currentY + 18, { align: 'right' });
+  const clientCompanyLines: string[] = doc.splitTextToSize(quote.client.companyName || 'Empresa Cliente', innerTextWidth);
 
-  currentY += 34;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  const leftDetails: string[] = [];
+  if (quote.client.taxId) {
+    leftDetails.push(`RUT / Tax ID: ${quote.client.taxId}`);
+  }
+  if (quote.client.contactName) {
+    leftDetails.push(`Atención: ${quote.client.contactName}`);
+  }
+  if (quote.client.contactRole) {
+    leftDetails.push(`Cargo: ${quote.client.contactRole}`);
+  }
+  if (quote.client.contactEmail) {
+    leftDetails.push(`Email: ${quote.client.contactEmail}`);
+  }
+  if (quote.client.contactPhone) {
+    leftDetails.push(`Teléfono: ${quote.client.contactPhone}`);
+  }
+  if (quote.client.industry || quote.client.country) {
+    leftDetails.push(`Sector: ${quote.client.industry} (${quote.client.country})`);
+  }
 
-  // Metadata Grid: Client and Project Details
+  const leftProcessedDetails: string[][] = leftDetails.map(d => doc.splitTextToSize(d, innerTextWidth));
+  let leftTotalLines = clientCompanyLines.length;
+  leftProcessedDetails.forEach(lines => { leftTotalLines += lines.length; });
+  const leftRequiredHeight = (innerPadY * 2) + 5 + (leftTotalLines * 3.7) + 3;
+
+  // Prepare Right Box Items (Offer Conditions)
+  const rightDetails: string[] = [
+    `Fecha de Emisión: ${quote.createdAt}`,
+    `Válida hasta: ${quote.validUntil}`,
+    `Moneda: ${quote.currency} (${quote.currencySymbol})`,
+    `Garantía Hipercare: ${quote.guaranteeHypercareDays} días post Go-Live`,
+    `Tipo de Servicio: ${quote.project.projectType}`,
+    `Metodología: ${quote.project.methodology}`
+  ];
+  const rightProcessedDetails: string[][] = rightDetails.map(d => doc.splitTextToSize(d, innerTextWidth));
+  let rightTotalLines = 0;
+  rightProcessedDetails.forEach(lines => { rightTotalLines += lines.length; });
+  const rightRequiredHeight = (innerPadY * 2) + 5 + (rightTotalLines * 3.7) + 3;
+
+  // Box height fits both sides dynamically without truncation or overflow
+  const metadataBoxHeight = Math.max(leftRequiredHeight, rightRequiredHeight, 42);
+
+  // Draw Box Backgrounds
   doc.setFillColor(...bgLight);
   doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(margin, currentY, (pageWidth - (margin * 2)) / 2 - 3, 38, 2, 2, 'FD');
-  doc.roundedRect(margin + (pageWidth - (margin * 2)) / 2 + 3, currentY, (pageWidth - (margin * 2)) / 2 - 3, 38, 2, 2, 'FD');
+  doc.roundedRect(leftBoxX, currentY, colWidth, metadataBoxHeight, 2, 2, 'FD');
+  doc.roundedRect(rightBoxX, currentY, colWidth, metadataBoxHeight, 2, 2, 'FD');
 
-  // Left Box: Cliente
+  // Render Left Box Text
+  let renderLeftY = currentY + innerPadY + 2;
   doc.setTextColor(...primaryNavy);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('DATOS DEL CLIENTE', margin + 4, currentY + 7);
+  doc.setFontSize(9);
+  doc.text('DATOS DEL CLIENTE', leftBoxX + innerPadX, renderLeftY);
+  renderLeftY += 4.5;
+
+  doc.setTextColor(...textDark);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text(clientCompanyLines, leftBoxX + innerPadX, renderLeftY);
+  renderLeftY += (clientCompanyLines.length * 3.7) + 0.5;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(...textGray);
+  leftProcessedDetails.forEach(lines => {
+    doc.text(lines, leftBoxX + innerPadX, renderLeftY);
+    renderLeftY += (lines.length * 3.7);
+  });
+
+  // Render Right Box Text
+  let renderRightY = currentY + innerPadY + 2;
+  doc.setTextColor(...primaryNavy);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('CONDICIONES DE LA OFERTA', rightBoxX + innerPadX, renderRightY);
+  renderRightY += 4.5;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(...textGray);
+  rightProcessedDetails.forEach(lines => {
+    doc.text(lines, rightBoxX + innerPadX, renderRightY);
+    renderRightY += (lines.length * 3.7);
+  });
+
+  currentY += metadataBoxHeight + 7;
+
+  // ==========================================
+  // Section 1: Scope & Project Objectives
+  // ==========================================
+  doc.setTextColor(...primaryNavy);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.text('1. ALCANCE Y OBJETIVOS DEL PROYECTO SAP', margin, currentY);
+  currentY += 4.5;
 
   doc.setTextColor(...textDark);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text(quote.client.companyName, margin + 4, currentY + 14);
+  const projTitleLines: string[] = doc.splitTextToSize(quote.project.projectTitle || 'Servicios Profesionales SAP', availableWidth);
+  doc.text(projTitleLines, margin, currentY);
+  currentY += (projTitleLines.length * 4) + 1.5;
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...textGray);
-  doc.text(`Identificación / Tax ID: ${quote.client.taxId || 'N/A'}`, margin + 4, currentY + 20);
-  doc.text(`Atención a: ${quote.client.contactName} (${quote.client.contactRole || 'Contacto'})`, margin + 4, currentY + 26);
-  doc.text(`Email: ${quote.client.contactEmail} | Tel: ${quote.client.contactPhone || 'N/A'}`, margin + 4, currentY + 32);
-
-  // Right Box: Cotización & Fechas
-  const rightBoxX = margin + (pageWidth - (margin * 2)) / 2 + 7;
-  doc.setTextColor(...primaryNavy);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('CONDICIONES DE LA OFERTA', rightBoxX, currentY + 7);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...textGray);
-  doc.text(`Fecha de Emisión: ${quote.createdAt}`, rightBoxX, currentY + 14);
-  doc.text(`Válida hasta: ${quote.validUntil}`, rightBoxX, currentY + 20);
-  doc.text(`Moneda de la Propuesta: ${quote.currency} (${quote.currencySymbol})`, rightBoxX, currentY + 26);
-  doc.text(`Garantía Hipercare Post Go-Live: ${quote.guaranteeHypercareDays} días incluidos`, rightBoxX, currentY + 32);
-
-  currentY += 44;
-
-  // Project Scope Section
-  doc.setTextColor(...primaryNavy);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('1. ALCANCE Y OBJETIVOS DEL PROYECTO SAP', margin, currentY);
-
-  currentY += 4;
-  doc.setTextColor(...textDark);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.text(quote.project.projectTitle, margin, currentY + 2);
-
-  currentY += 7;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
+  doc.setFontSize(7.5);
   doc.setTextColor(...textGray);
   const typeText = `Tipo de Servicio: ${quote.project.projectType}  |  Entorno: ${quote.project.sapSystemVersion}  |  Metodología: ${quote.project.methodology}  |  Duración estimada: ${quote.project.durationMonths} meses`;
-  doc.text(typeText, margin, currentY);
+  const typeLines: string[] = doc.splitTextToSize(typeText, availableWidth);
+  doc.text(typeLines, margin, currentY);
+  currentY += (typeLines.length * 3.7) + 2;
 
-  currentY += 6;
   doc.setTextColor(...textDark);
-  const splitDescription = doc.splitTextToSize(quote.project.scopeDescription || quote.project.businessObjective || '', pageWidth - (margin * 2));
-  doc.text(splitDescription, margin, currentY);
-  currentY += (splitDescription.length * 4.2) + 6;
+  const descText = quote.project.scopeDescription || quote.project.businessObjective || '';
+  if (descText) {
+    const splitDescription: string[] = doc.splitTextToSize(descText, availableWidth);
+    doc.text(splitDescription, margin, currentY);
+    currentY += (splitDescription.length * 3.8) + 5;
+  }
 
+  // ==========================================
   // Section 2: Staffing Plan & Resources (SAP Modules)
+  // ==========================================
+  if (currentY > pageHeight - 55) {
+    doc.addPage();
+    currentY = 20;
+  }
+
   doc.setTextColor(...primaryNavy);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
   doc.text('2. EQUIPO CONSULTOR Y ASIGNACIÓN DE RECURSOS SAP', margin, currentY);
   currentY += 3;
 
@@ -150,32 +235,33 @@ export function generateQuotationPDF(quote: Quotation): jsPDF {
     bodyStyles: {
       textColor: textDark,
       fontSize: 7.5,
-      cellPadding: 2.2
+      cellPadding: 2
     },
     columnStyles: {
       0: { cellWidth: 32 },
-      1: { cellWidth: 50 },
-      2: { cellWidth: 26 },
+      1: { cellWidth: 48 },
+      2: { cellWidth: 24 },
       3: { cellWidth: 20 },
       4: { cellWidth: 16, halign: 'right' },
-      5: { cellWidth: 20, halign: 'right' },
-      6: { cellWidth: 24, halign: 'right', fontStyle: 'bold' }
+      5: { cellWidth: 18, halign: 'right' },
+      6: { cellWidth: 22, halign: 'right', fontStyle: 'bold' }
     }
   });
 
   // @ts-expect-error autoTable adds lastAutoTable to doc
-  currentY = doc.lastAutoTable.finalY + 8;
+  currentY = doc.lastAutoTable.finalY + 7;
 
-  // Check if we need page break
-  if (currentY > pageHeight - 75) {
+  // ==========================================
+  // Section 3: Milestones & Payment Schedule
+  // ==========================================
+  if (currentY > pageHeight - 55) {
     doc.addPage();
     currentY = 20;
   }
 
-  // Section 3: Milestones & Payment Schedule
   doc.setTextColor(...primaryNavy);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
   doc.text('3. HITOS, ENTREGABLES CLAVE Y PLAN DE FACTURACIÓN', margin, currentY);
   currentY += 3;
 
@@ -201,114 +287,146 @@ export function generateQuotationPDF(quote: Quotation): jsPDF {
     bodyStyles: {
       textColor: textDark,
       fontSize: 7.5,
-      cellPadding: 2.2
+      cellPadding: 2
     },
     columnStyles: {
-      0: { cellWidth: 52, fontStyle: 'bold' },
-      1: { cellWidth: 88 },
-      2: { cellWidth: 28 },
-      3: { cellWidth: 20, halign: 'right', fontStyle: 'bold' }
+      0: { cellWidth: 46, fontStyle: 'bold' },
+      1: { cellWidth: 86 },
+      2: { cellWidth: 26 },
+      3: { cellWidth: 22, halign: 'right', fontStyle: 'bold' }
     }
   });
 
   // @ts-expect-error autoTable adds lastAutoTable
-  currentY = doc.lastAutoTable.finalY + 8;
+  currentY = doc.lastAutoTable.finalY + 7;
 
-  // Check for page break before Financial Summary & Signatures
-  if (currentY > pageHeight - 85) {
+  // ==========================================
+  // Section 4: Financial Summary & Commercial Terms
+  // ==========================================
+  if (currentY > pageHeight - 80) {
     doc.addPage();
     currentY = 20;
   }
 
-  // Section 4: Financial Summary & Commercial Terms
   doc.setTextColor(...primaryNavy);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
   doc.text('4. RESUMEN ECONÓMICO Y CONDICIONES COMERCIALES', margin, currentY);
-  currentY += 5;
+  currentY += 4.5;
 
   const financialBoxWidth = 85;
   const financialBoxX = pageWidth - margin - financialBoxWidth;
+  const termsBoxWidth = financialBoxX - margin - 8;
 
-  // Terms (Left)
+  // Left side: Payment Terms
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(...textDark);
   doc.text('Términos de Facturación y Pago:', margin, currentY + 2);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(...textGray);
-  const paymentSplit = doc.splitTextToSize(quote.paymentTerms || 'Facturación contra hito formalmente aceptado (30 días).', financialBoxX - margin - 8);
-  doc.text(paymentSplit, margin, currentY + 7);
+  const paymentSplit: string[] = doc.splitTextToSize(quote.paymentTerms || 'Facturación contra hito formalmente aceptado (30 días).', termsBoxWidth);
+  doc.text(paymentSplit, margin, currentY + 6.5);
+  let termsHeight = 7 + (paymentSplit.length * 3.7);
 
-  // Financial Table (Right)
+  if (quote.expensesAmount && quote.expensesAmount > 0) {
+    const expText: string[] = doc.splitTextToSize(`Gastos de Traslado / Viáticos: ${formatCurrency(quote.expensesAmount, quote.currency, quote.currencySymbol)} (adicionales)`, termsBoxWidth);
+    doc.text(expText, margin, currentY + termsHeight + 1);
+    termsHeight += (expText.length * 3.7) + 2;
+  }
+
+  // Right side: Financial Table Card
+  const quoteExpenses = Number(quote.expensesAmount) || 0;
+  let finRowsCount = 2; // base: subtotal + total
+  if (totals.discountAmount > 0) finRowsCount++;
+  if (totals.taxAmount > 0) finRowsCount++;
+  if (quoteExpenses > 0) finRowsCount++;
+  const financialBoxHeight = (finRowsCount * 6.2) + 10;
+
   doc.setFillColor(...bgLight);
   doc.setDrawColor(203, 213, 225);
-  doc.rect(financialBoxX, currentY - 2, financialBoxWidth, 38, 'FD');
+  doc.roundedRect(financialBoxX, currentY - 2, financialBoxWidth, financialBoxHeight, 2, 2, 'FD');
 
-  let rowY = currentY + 4;
+  let rowY = currentY + 3.5;
   const renderFinRow = (label: string, value: string, isBold = false, isHighlight = false) => {
     doc.setFont('helvetica', isBold ? 'bold' : 'normal');
-    doc.setFontSize(isHighlight ? 9.5 : 8);
+    doc.setFontSize(isHighlight ? 9.5 : 7.5);
     doc.setTextColor(isHighlight ? primaryNavy[0] : textDark[0], isHighlight ? primaryNavy[1] : textDark[1], isHighlight ? primaryNavy[2] : textDark[2]);
     doc.text(label, financialBoxX + 4, rowY);
     doc.text(value, financialBoxX + financialBoxWidth - 4, rowY, { align: 'right' });
-    rowY += 6.5;
+    rowY += 6;
   };
 
-  renderFinRow(`Total Horas Estimadas (${totals.totalHours} hrs):`, formatCurrency(totals.subtotalConsulting, quote.currency, quote.currencySymbol));
+  renderFinRow(`Total Horas (${totals.totalHours} hrs):`, formatCurrency(totals.subtotalConsulting, quote.currency, quote.currencySymbol));
   if (totals.discountAmount > 0) {
     renderFinRow(`Descuento Comercial (${quote.discountPercentage}%):`, `- ${formatCurrency(totals.discountAmount, quote.currency, quote.currencySymbol)}`);
+  }
+  if (quoteExpenses > 0) {
+    renderFinRow(`Gastos / Viáticos:`, formatCurrency(quoteExpenses, quote.currency, quote.currencySymbol));
   }
   if (totals.taxAmount > 0) {
     renderFinRow(`Impuestos / IVA (${quote.taxRatePercentage}%):`, formatCurrency(totals.taxAmount, quote.currency, quote.currencySymbol));
   }
   doc.setDrawColor(203, 213, 225);
-  doc.line(financialBoxX + 3, rowY - 2, financialBoxX + financialBoxWidth - 3, rowY - 2);
-  renderFinRow('TOTAL GENERAL PROPUESTA:', formatCurrency(totals.totalAmount, quote.currency, quote.currencySymbol), true, true);
+  doc.line(financialBoxX + 3, rowY - 1.5, financialBoxX + financialBoxWidth - 3, rowY - 1.5);
+  rowY += 1;
+  renderFinRow('TOTAL GENERAL:', formatCurrency(totals.totalAmount, quote.currency, quote.currencySymbol), true, true);
+  if (quote.currency === 'UF') {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    const estClp = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(convertUfToClp(totals.totalAmount));
+    doc.text(`* Ref. Banco Central: ~ $ ${estClp} CLP`, financialBoxX + financialBoxWidth - 4, rowY + 1, { align: 'right' });
+  }
 
-  currentY += 46;
+  currentY += Math.max(financialBoxHeight, termsHeight) + 8;
 
+  // ==========================================
   // Section 5: Signature Blocks
-  if (currentY > pageHeight - 45) {
+  // ==========================================
+  if (currentY > pageHeight - 42) {
     doc.addPage();
-    currentY = 25;
+    currentY = 22;
   }
 
   doc.setDrawColor(148, 163, 184);
   const signatureWidth = 72;
-  const leftSigX = margin + 10;
-  const rightSigX = pageWidth - margin - signatureWidth - 10;
+  const leftSigX = margin + 8;
+  const rightSigX = pageWidth - margin - signatureWidth - 8;
 
-  // Left Sig
-  doc.line(leftSigX, currentY + 18, leftSigX + signatureWidth, currentY + 18);
+  // Left Signature
+  doc.line(leftSigX, currentY + 14, leftSigX + signatureWidth, currentY + 14);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(...textDark);
-  doc.text('POR LA CONSULTORA SAP', leftSigX + (signatureWidth / 2), currentY + 22, { align: 'center' });
+  doc.text('POR LA CONSULTORA SAP', leftSigX + (signatureWidth / 2), currentY + 18, { align: 'center' });
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
+  doc.setFontSize(6.5);
   doc.setTextColor(...textGray);
-  doc.text('Firma y Timbre Representante Legal', leftSigX + (signatureWidth / 2), currentY + 26, { align: 'center' });
+  doc.text('Firma y Timbre Representante Legal', leftSigX + (signatureWidth / 2), currentY + 22, { align: 'center' });
 
-  // Right Sig
-  doc.line(rightSigX, currentY + 18, rightSigX + signatureWidth, currentY + 18);
+  // Right Signature
+  doc.line(rightSigX, currentY + 14, rightSigX + signatureWidth, currentY + 14);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(...textDark);
-  doc.text('ACEPTACIÓN Y ORDEN DE COMPRA CLIENTE', rightSigX + (signatureWidth / 2), currentY + 22, { align: 'center' });
+  doc.text('ACEPTACIÓN Y ORDEN DE COMPRA CLIENTE', rightSigX + (signatureWidth / 2), currentY + 18, { align: 'center' });
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
+  doc.setFontSize(6.5);
   doc.setTextColor(...textGray);
-  doc.text(`${quote.client.companyName} | RUT / Tax ID`, rightSigX + (signatureWidth / 2), currentY + 26, { align: 'center' });
+  const clientSigText: string[] = doc.splitTextToSize(`${quote.client.companyName} | ${quote.client.taxId || 'RUT/Tax ID'}`, signatureWidth);
+  doc.text(clientSigText, rightSigX + (signatureWidth / 2), currentY + 22, { align: 'center' });
 
+  // ==========================================
   // Footer on all pages
+  // ==========================================
   const totalPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
+    doc.setFontSize(7);
     doc.setTextColor(148, 163, 184);
     doc.text(
       `Documento emitido por SAP Proposal Hub | Cotización ${quote.code} v${quote.version} | Página ${i} de ${totalPages}`,

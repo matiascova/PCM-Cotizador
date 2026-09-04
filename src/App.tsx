@@ -17,7 +17,13 @@ import { QuotationForm } from './components/QuotationForm';
 import { QuotationDetailModal } from './components/QuotationDetailModal';
 import { ProjectExecutionHandover } from './components/ProjectExecutionHandover';
 import { QuotationPrintView } from './components/QuotationPrintView';
+import { BancoCentralModal } from './components/BancoCentralModal';
 import { SAP_CATALOG_MODULES } from './data/sapModules';
+import { 
+  BancoCentralData, 
+  fetchBancoCentralIndicators, 
+  getCachedBancoCentralData 
+} from './services/bcentralService';
 
 const STORAGE_KEY = 'sap_quotations_v1_data';
 
@@ -26,7 +32,14 @@ export default function App() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        // If stored data doesn't have the new UF proposal, merge it in
+        const hasUfQuote = parsed.some((q: Quotation) => q.currency === 'UF');
+        if (!hasUfQuote) {
+          const ufQuote = INITIAL_QUOTATIONS.find(q => q.currency === 'UF');
+          if (ufQuote) return [ufQuote, ...parsed];
+        }
+        return parsed;
       }
     } catch (e) {
       console.error('Error loading quotations from localStorage', e);
@@ -34,9 +47,40 @@ export default function App() {
     return INITIAL_QUOTATIONS;
   });
 
+  // Banco Central de Chile Indicators
+  const [bcentralData, setBcentralData] = useState<BancoCentralData>(getCachedBancoCentralData());
+  const [isBancoCentralModalOpen, setIsBancoCentralModalOpen] = useState(false);
+
+  // Fetch live indicators from /api/bcentral/indicators (backed by Banco Central de Chile API)
+  useEffect(() => {
+    fetchBancoCentralIndicators(false)
+      .then(data => setBcentralData(data))
+      .catch(err => console.warn('Could not sync Banco Central indicators:', err));
+  }, []);
+
   // Navigation state matching Geometric Balance sidebar
   const [activeNav, setActiveNav] = useState<'builder' | 'history' | 'clients' | 'resources'>('builder');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Collapsible Curtain Sidebar (default true to maximize screen space)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('sap_sidebar_collapsed');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const handleToggleSidebarCollapse = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('sap_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Active Modals & Views
   const [selectedQuote, setSelectedQuote] = useState<Quotation | null>(null);
@@ -233,7 +277,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-full bg-[#F1F5F9] font-sans overflow-hidden text-slate-800">
-      {/* Left Sidebar matching Geometric Balance theme */}
+      {/* Left Curtain Sidebar */}
       <Sidebar
         activeNav={activeNav}
         setActiveNav={setActiveNav}
@@ -241,6 +285,8 @@ export default function App() {
         onNewQuotation={handleNewQuotation}
         isOpenMobile={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={handleToggleSidebarCollapse}
       />
 
       {/* Main Content Area */}
@@ -252,6 +298,10 @@ export default function App() {
           onNewQuotation={handleNewQuotation}
           onResetData={handleResetData}
           onToggleMobileSidebar={() => setIsMobileSidebarOpen(true)}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebarCollapse={handleToggleSidebarCollapse}
+          bcentralData={bcentralData}
+          onOpenBancoCentralModal={() => setIsBancoCentralModalOpen(true)}
         />
 
         {/* Scrollable Center Body */}
@@ -327,6 +377,14 @@ export default function App() {
           onClose={() => setHandoverQuote(null)}
         />
       )}
+
+      {/* Modal 4: Banco Central de Chile Official Indicators & UF Calculator */}
+      <BancoCentralModal
+        isOpen={isBancoCentralModalOpen}
+        onClose={() => setIsBancoCentralModalOpen(false)}
+        data={bcentralData}
+        onDataUpdated={setBcentralData}
+      />
     </div>
   );
 }

@@ -135,17 +135,27 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                   Cotizaciones Asociadas ({client.quotes.length})
                 </span>
                 <div className="space-y-1.5">
-                  {client.quotes.map(q => (
-                    <div
-                      key={q.id}
-                      onClick={() => onSelectQuote(q)}
-                      className="p-2 rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer flex items-center justify-between text-xs"
-                    >
-                      <span className="font-mono font-bold text-blue-700">{q.code}</span>
-                      <span className="text-[11px] text-slate-500 truncate max-w-[120px]">{q.project.projectTitle}</span>
-                      <ArrowUpRight className="w-3.5 h-3.5 text-slate-400" />
-                    </div>
-                  ))}
+                  {client.quotes.map(q => {
+                    const qTotals = calculateQuotationTotals(q);
+                    return (
+                      <div
+                        key={q.id}
+                        onClick={() => onSelectQuote(q)}
+                        className="p-2 rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer flex items-center justify-between text-xs"
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-mono font-bold text-blue-700">{q.code}</span>
+                          <span className="text-[11px] text-slate-500 truncate max-w-[130px]">{q.project.projectTitle}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] font-mono font-bold text-slate-700">
+                            {formatCurrency(qTotals.totalAmount, q.currency, q.currencySymbol)}
+                          </span>
+                          <ArrowUpRight className="w-3.5 h-3.5 text-slate-400" />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -154,8 +164,8 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
             <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
               <div>
                 <span className="text-[10px] text-slate-400 block uppercase font-bold">Total Presupuestado</span>
-                <span className="text-base font-black text-blue-600">
-                  {formatCurrency(client.totalQuoted, 'USD', '$')}
+                <span className="text-base font-black text-blue-600 font-mono">
+                  {formatCurrency(client.totalQuoted, client.quotes[0]?.currency, client.quotes[0]?.currencySymbol)}
                 </span>
               </div>
               <button
