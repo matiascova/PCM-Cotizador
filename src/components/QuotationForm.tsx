@@ -22,7 +22,14 @@ import {
   CheckSquare,
   Clock,
   Calculator,
-  Percent
+  Percent,
+  ShieldCheck,
+  AlertTriangle,
+  RotateCcw,
+  Check,
+  Copy,
+  Wand2,
+  User
 } from 'lucide-react';
 import { 
   Quotation, 
@@ -34,7 +41,13 @@ import {
   PayrollCustomService,
   PayrollServiceConfig,
   RecruitmentActivityItem,
-  RecruitmentServiceConfig
+  RecruitmentServiceConfig,
+  RiskMitigationItem,
+  OutOfScopeCategoryItem,
+  CommercialLeadInfo,
+  ClientSignerInfo,
+  Professional,
+  ClientMasterItem
 } from '../types';
 import { 
   SAP_CATALOG_MODULES, 
@@ -42,25 +55,45 @@ import {
   STANDARD_ASSUMPTIONS, 
   STANDARD_OUT_OF_SCOPE 
 } from '../data/sapModules';
+import { 
+  DEFAULT_RISK_ITEMS, 
+  DEFAULT_OUT_OF_SCOPE_CATEGORIES, 
+  DEFAULT_GATEKEEPER_CONDITION, 
+  getDossierPresetsByProjectType 
+} from '../data/dossierPresets';
 import { calculateQuotationTotals, formatCurrency } from '../utils/calculations';
 import { CURRENCIES, SupportedCurrency, getBenchmarkRate, convertCurrency } from '../utils/currencies';
 import { getCachedBancoCentralData, convertUfToClp, convertClpToUf, formatUfValue } from '../services/bcentralService';
+import { getStoredProfessionals, getProfessionalRate } from '../data/professionals';
+import { getStoredClients } from '../data/clientsMaster';
+import { ProfessionalPickerModal } from './ProfessionalPickerModal';
+import { LogoUploader } from './LogoUploader';
+import { formatRut, validateRut, CHILE_COMUNAS, COMMON_GIROS_SII } from '../utils/siiUtils';
 
 interface QuotationFormProps {
   initialQuote?: Quotation | null;
   onSave: (quote: Quotation) => void;
   onCancel: () => void;
+  professionals?: Professional[];
+  clients?: ClientMasterItem[];
+  onSaveClientToMaster?: (client: ClientMasterItem) => void;
+  initialClient?: ClientMasterItem | null;
 }
 
 export const QuotationForm: React.FC<QuotationFormProps> = ({
   initialQuote,
   onSave,
-  onCancel
+  onCancel,
+  professionals: propProfessionals,
+  clients: propClients,
+  onSaveClientToMaster,
+  initialClient
 }) => {
   const isEditing = !!initialQuote;
+  const availableClients = propClients || getStoredClients();
 
-  // Active step in the structured wizard/tabs
-  const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  // Active step in the structured wizard/tabs (now includes Step 6 for Bridev Dossier & Legal)
+  const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
 
   // Form State
   const [code, setCode] = useState(initialQuote?.code || `COT-SAP-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`);
@@ -70,15 +103,25 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   const [currency, setCurrency] = useState<'USD' | 'EUR' | 'CLP' | 'MXN' | 'COP' | 'UF'>(initialQuote?.currency || 'USD');
   const [currencySymbol, setCurrencySymbol] = useState(initialQuote?.currencySymbol || '$');
 
-  // Client info
-  const [companyName, setCompanyName] = useState(initialQuote?.client.companyName || '');
-  const [taxId, setTaxId] = useState(initialQuote?.client.taxId || '');
-  const [contactName, setContactName] = useState(initialQuote?.client.contactName || '');
-  const [contactRole, setContactRole] = useState(initialQuote?.client.contactRole || 'Gerente de TI / Transformación Digital');
-  const [contactEmail, setContactEmail] = useState(initialQuote?.client.contactEmail || '');
-  const [contactPhone, setContactPhone] = useState(initialQuote?.client.contactPhone || '');
-  const [industry, setIndustry] = useState(initialQuote?.client.industry || 'Manufactura & Operaciones');
-  const [country, setCountry] = useState(initialQuote?.client.country || 'Chile');
+  // Client info (SII & Branding)
+  const [companyName, setCompanyName] = useState(initialQuote?.client.companyName || initialClient?.companyName || '');
+  const [fantasyName, setFantasyName] = useState(initialQuote?.client.fantasyName || initialClient?.fantasyName || '');
+  const [taxId, setTaxId] = useState(initialQuote?.client.taxId || initialClient?.taxId || '');
+  const [businessActivity, setBusinessActivity] = useState(initialQuote?.client.businessActivity || initialClient?.businessActivity || '');
+  const [siiActivityCode, setSiiActivityCode] = useState(initialQuote?.client.siiActivityCode || initialClient?.siiActivityCode || '');
+  const [taxAddress, setTaxAddress] = useState(initialQuote?.client.taxAddress || initialClient?.taxAddress || '');
+  const [comuna, setComuna] = useState(initialQuote?.client.comuna || initialClient?.comuna || 'Las Condes');
+  const [city, setCity] = useState(initialQuote?.client.city || initialClient?.city || 'Santiago');
+  const [country, setCountry] = useState(initialQuote?.client.country || initialClient?.country || 'Chile');
+  const [contactName, setContactName] = useState(initialQuote?.client.contactName || initialClient?.contactName || '');
+  const [contactRole, setContactRole] = useState(initialQuote?.client.contactRole || initialClient?.contactRole || 'Gerente de TI / Transformación Digital');
+  const [contactEmail, setContactEmail] = useState(initialQuote?.client.contactEmail || initialClient?.contactEmail || '');
+  const [contactPhone, setContactPhone] = useState(initialQuote?.client.contactPhone || initialClient?.contactPhone || '');
+  const [billingEmail, setBillingEmail] = useState(initialQuote?.client.billingEmail || initialClient?.billingEmail || '');
+  const [industry, setIndustry] = useState(initialQuote?.client.industry || initialClient?.industry || 'Manufactura & Operaciones');
+  const [clientLogoUrl, setClientLogoUrl] = useState(initialQuote?.client.logoUrl || initialClient?.logoUrl || '');
+  const [showClientPicker, setShowClientPicker] = useState(false);
+  const [clientSavedNotice, setClientSavedNotice] = useState(false);
 
   // Project scope
   const [projectTitle, setProjectTitle] = useState(initialQuote?.project.projectTitle || '');
@@ -91,6 +134,57 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   const [scopeDescription, setScopeDescription] = useState(initialQuote?.project.scopeDescription || '');
   const [assumptions, setAssumptions] = useState<string[]>(initialQuote?.project.assumptions || STANDARD_ASSUMPTIONS);
   const [outOfScope, setOutOfScope] = useState<string[]>(initialQuote?.project.outOfScope || STANDARD_OUT_OF_SCOPE);
+
+  // =======================================================
+  // DOSSIER EDITORIAL (ESTILO BRIDEV) INPUTS
+  // =======================================================
+  const initialDossierPresets = getDossierPresetsByProjectType(initialQuote?.project.projectType || 'Roll-out de Módulos');
+  const [currentSituationHoy, setCurrentSituationHoy] = useState<string>(
+    initialQuote?.currentSituationHoy || initialDossierPresets.hoy
+  );
+  const [builtSolutionQuedaConstruido, setBuiltSolutionQuedaConstruido] = useState<string>(
+    initialQuote?.builtSolutionQuedaConstruido || initialDossierPresets.quedaConstruido
+  );
+  const [gatekeeperCondition, setGatekeeperCondition] = useState<string>(
+    initialQuote?.gatekeeperCondition || DEFAULT_GATEKEEPER_CONDITION
+  );
+  const [riskItems, setRiskItems] = useState<RiskMitigationItem[]>(
+    initialQuote?.riskItems && initialQuote.riskItems.length > 0
+      ? initialQuote.riskItems
+      : DEFAULT_RISK_ITEMS
+  );
+  const [outOfScopeCategories, setOutOfScopeCategories] = useState<OutOfScopeCategoryItem[]>(
+    initialQuote?.outOfScopeCategories && initialQuote.outOfScopeCategories.length > 0
+      ? initialQuote.outOfScopeCategories
+      : DEFAULT_OUT_OF_SCOPE_CATEGORIES
+  );
+  const [commercialLead, setCommercialLead] = useState<CommercialLeadInfo>(
+    initialQuote?.commercialLead || {
+      name: 'Diego Rodrigues',
+      role: 'Líder de Práctica & Consultor Senior',
+      email: 'drodrigues@consultora-tech.cl',
+      phone: '+56 9 4924 9816',
+      location: 'Santiago de Chile'
+    }
+  );
+  const [clientSigner, setClientSigner] = useState<ClientSignerInfo>(
+    initialQuote?.clientSigner || {
+      name: initialQuote?.client.contactName || '',
+      taxId: initialQuote?.client.taxId || '',
+      role: initialQuote?.client.contactRole || 'Representante Legal / Gerente de Área',
+      email: initialQuote?.client.contactEmail || ''
+    }
+  );
+  const [confidentialityMonths, setConfidentialityMonths] = useState<number>(
+    initialQuote?.confidentialityMonths || 6
+  );
+  const [validityDays, setValidityDays] = useState<number>(
+    initialQuote?.validityDays || 30
+  );
+  const [coverTheme, setCoverTheme] = useState<'alpine' | 'corporate' | 'datacenter'>(
+    initialQuote?.coverTheme || 'alpine'
+  );
+
 
   // =======================================================
   // SERVICIOS ESPECIALIZADOS: 1. PROCESO DE REMUNERACIONES
@@ -352,9 +446,22 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
     }
   };
 
+  // Professionals Catalog State
+  const catalogProfessionals: Professional[] = propProfessionals || getStoredProfessionals();
+  const [isPickerModalOpen, setIsPickerModalOpen] = useState(false);
+
   const handleApplyBenchmarkRatesForCurrency = () => {
     setResources(prev => prev.map(r => {
-      const newRate = getBenchmarkRate(r.moduleCode, r.seniority, currency);
+      let newRate = 0;
+      if (r.professionalId) {
+        const prof = catalogProfessionals.find(p => p.id === r.professionalId);
+        if (prof) {
+          newRate = getProfessionalRate(prof, currency);
+        }
+      }
+      if (!newRate) {
+        newRate = getBenchmarkRate(r.moduleCode, r.seniority, currency);
+      }
       const hours = Number(r.hours) || 0;
       return {
         ...r,
@@ -368,7 +475,60 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
     setCurrencyChangePrompt(null);
   };
 
-  // Add Resource from catalog
+  // Add Resource from Professionals Catalog (with exact official rate preloaded)
+  const handleAddProfessionalFromCatalog = (prof: Professional) => {
+    const rate = getProfessionalRate(prof, currency);
+    const hours = 120;
+
+    const newRes: SapResourceItem = {
+      id: `res-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      moduleCode: prof.moduleCode,
+      moduleName: prof.moduleName,
+      roleTitle: `${prof.name} (${prof.roleTitle})`,
+      seniority: prof.seniority,
+      hours,
+      hourlyRate: rate,
+      subtotal: hours * rate,
+      modality: prof.modality,
+      responsibilities: prof.skills?.join(', ') || prof.bio || 'Consultoría especializada SAP.',
+      professionalId: prof.id,
+      professionalName: prof.name
+    };
+
+    setResources(prev => [...prev, newRes]);
+  };
+
+  // Assign or reassign a catalog professional to an existing resource row
+  const handleAssignProfessionalToResource = (resourceId: string, profId: string) => {
+    if (!profId) {
+      handleUpdateResource(resourceId, {
+        professionalId: undefined,
+        professionalName: undefined
+      });
+      return;
+    }
+    const prof = catalogProfessionals.find(p => p.id === profId);
+    if (!prof) return;
+
+    const rate = getProfessionalRate(prof, currency);
+    const target = resources.find(r => r.id === resourceId);
+    const hours = target ? Number(target.hours) || 120 : 120;
+
+    handleUpdateResource(resourceId, {
+      professionalId: prof.id,
+      professionalName: prof.name,
+      roleTitle: `${prof.name} (${prof.roleTitle})`,
+      moduleCode: prof.moduleCode,
+      moduleName: prof.moduleName,
+      seniority: prof.seniority,
+      modality: prof.modality,
+      hourlyRate: rate,
+      subtotal: hours * rate,
+      responsibilities: prof.skills?.join(', ') || target?.responsibilities
+    });
+  };
+
+  // Add Resource from standard SAP modules catalog
   const handleAddModuleFromCatalog = (catalogMod: typeof SAP_CATALOG_MODULES[0]) => {
     const defaultSeniority: SeniorityLevel = 'Senior';
     const rate = getBenchmarkRate(catalogMod.code, defaultSeniority, currency);
@@ -431,6 +591,139 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       id: `m-std-${Date.now()}-${idx}`,
       ...m
     })));
+  };
+
+  // =======================================================
+  // HANDLERS PARA DOSSIER EDITORIAL (ESTILO BRIDEV)
+  // =======================================================
+  const handleReloadPresetsForProjectType = (typeToUse = projectType) => {
+    const presets = getDossierPresetsByProjectType(typeToUse);
+    setCurrentSituationHoy(presets.hoy);
+    setBuiltSolutionQuedaConstruido(presets.quedaConstruido);
+  };
+
+  const handleAddRiskItem = () => {
+    const newRisk: RiskMitigationItem = {
+      id: `r-${Date.now()}`,
+      risk: 'Nuevo riesgo detectado en la operación',
+      impact: 'Impacto potencial en el cronograma o pruebas.',
+      mitigation: 'Plan de acción preventivo acordado con el cliente.',
+      owner: 'Ambos'
+    };
+    setRiskItems(prev => [...prev, newRisk]);
+  };
+
+  const handleUpdateRiskItem = (id: string, updates: Partial<RiskMitigationItem>) => {
+    setRiskItems(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+  };
+
+  const handleDeleteRiskItem = (id: string) => {
+    setRiskItems(prev => prev.filter(r => r.id !== id));
+  };
+
+  const handleResetRiskItems = () => {
+    setRiskItems(DEFAULT_RISK_ITEMS);
+  };
+
+  const handleAddOutOfScopeCategory = () => {
+    const newCat: OutOfScopeCategoryItem = {
+      id: `oosc-${Date.now()}`,
+      title: 'Nueva Categoría Excluida',
+      description: 'Detalle de los servicios o componentes no cubiertos en esta propuesta comercial.'
+    };
+    setOutOfScopeCategories(prev => [...prev, newCat]);
+  };
+
+  const handleUpdateOutOfScopeCategory = (id: string, updates: Partial<OutOfScopeCategoryItem>) => {
+    setOutOfScopeCategories(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+  };
+
+  const handleDeleteOutOfScopeCategory = (id: string) => {
+    setOutOfScopeCategories(prev => prev.filter(c => c.id !== id));
+  };
+
+  const handleResetOutOfScopeCategories = () => {
+    setOutOfScopeCategories(DEFAULT_OUT_OF_SCOPE_CATEGORIES);
+  };
+
+  const handleCopyContactToSigner = () => {
+    setClientSigner({
+      name: contactName,
+      taxId: taxId,
+      role: contactRole || 'Representante Legal / Gerente de Área',
+      email: contactEmail
+    });
+  };
+
+  const handleSelectClientFromMaster = (c: ClientMasterItem) => {
+    setCompanyName(c.companyName);
+    setFantasyName(c.fantasyName || c.companyName);
+    setTaxId(c.taxId);
+    setBusinessActivity(c.businessActivity || '');
+    setSiiActivityCode(c.siiActivityCode || '');
+    setTaxAddress(c.taxAddress || '');
+    setComuna(c.comuna || 'Las Condes');
+    setCity(c.city || 'Santiago');
+    setCountry(c.country || 'Chile');
+    setContactName(c.contactName || '');
+    setContactRole(c.contactRole || 'Gerente de TI');
+    setContactEmail(c.contactEmail || '');
+    setContactPhone(c.contactPhone || '');
+    setBillingEmail(c.billingEmail || c.contactEmail || '');
+    setIndustry(c.industry || 'Manufactura & Operaciones');
+    setClientLogoUrl(c.logoUrl || '');
+    setShowClientPicker(false);
+  };
+
+  const handleSaveCurrentClientToMaster = () => {
+    if (!companyName.trim()) {
+      alert('Por favor ingrese al menos la Razón Social o Empresa para registrarla en el Maestro de Clientes.');
+      return;
+    }
+
+    const newMasterClient: ClientMasterItem = {
+      id: `client-${Date.now()}`,
+      companyName: companyName.trim(),
+      fantasyName: fantasyName.trim() || companyName.trim(),
+      taxId: taxId.trim(),
+      businessActivity: businessActivity.trim(),
+      siiActivityCode: siiActivityCode.trim(),
+      taxAddress: taxAddress.trim(),
+      comuna: comuna.trim(),
+      city: city.trim(),
+      country: country.trim() || 'Chile',
+      contactName: contactName.trim(),
+      contactRole: contactRole.trim(),
+      contactEmail: contactEmail.trim(),
+      contactPhone: contactPhone.trim(),
+      billingEmail: billingEmail.trim(),
+      industry: industry.trim(),
+      logoUrl: clientLogoUrl.trim(),
+      createdAt: new Date().toISOString().slice(0, 10),
+      updatedAt: new Date().toISOString().slice(0, 10),
+      active: true
+    };
+
+    if (onSaveClientToMaster) {
+      onSaveClientToMaster(newMasterClient);
+    } else {
+      const stored = getStoredClients();
+      const existingIdx = stored.findIndex(c => c.taxId && c.taxId === newMasterClient.taxId);
+      let updatedList: ClientMasterItem[];
+      if (existingIdx >= 0) {
+        updatedList = stored.map((item, idx) => idx === existingIdx ? { ...item, ...newMasterClient, id: item.id } : item);
+      } else {
+        updatedList = [newMasterClient, ...stored];
+      }
+      try {
+        localStorage.setItem('sap_clients_master', JSON.stringify(updatedList));
+      } catch (e) {
+        console.error('Error saving client master:', e);
+      }
+    }
+
+    setClientSavedNotice(true);
+    setTimeout(() => setClientSavedNotice(false), 3500);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -505,13 +798,21 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       rejectionReason: initialQuote?.rejectionReason,
       client: {
         companyName,
+        fantasyName,
         taxId,
+        businessActivity,
+        siiActivityCode,
+        taxAddress,
+        comuna,
+        city,
+        country,
         contactName,
         contactRole,
         contactEmail,
         contactPhone,
+        billingEmail,
         industry,
-        country
+        logoUrl: clientLogoUrl
       },
       project: {
         projectTitle,
@@ -538,15 +839,27 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       updatedAt: now,
       handoverNotes: initialQuote?.handoverNotes,
       executionAssignedPM: initialQuote?.executionAssignedPM,
-      actualProjectCode: initialQuote?.actualProjectCode
+      actualProjectCode: initialQuote?.actualProjectCode,
+
+      // Dossier Editorial (Estilo Bridev) Inputs
+      currentSituationHoy,
+      builtSolutionQuedaConstruido,
+      gatekeeperCondition,
+      riskItems,
+      outOfScopeCategories,
+      commercialLead,
+      clientSigner,
+      confidentialityMonths: Number(confidentialityMonths) || 6,
+      validityDays: Number(validityDays) || 30,
+      coverTheme
     };
 
     onSave(savedQuotation);
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-sm flex justify-center p-2 sm:p-5">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-5xl w-full flex flex-col max-h-[94vh] overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-[92vw] max-w-[94vw] h-[90vh] max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         
         {/* Header */}
         <div className="bg-slate-900 text-white p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between">
@@ -579,7 +892,8 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
             { step: 2, label: '2. Alcance & Metodología', icon: Layers },
             { step: 3, label: `3. Recursos SAP (${resources.length})`, icon: Users },
             { step: 4, label: `4. Hitos (${milestones.length})`, icon: Calendar },
-            { step: 5, label: '5. Precios & Cierre', icon: DollarSign }
+            { step: 5, label: '5. Precios & Cierre', icon: DollarSign },
+            { step: 6, label: '6. Dossier Bridev & Legal ✨', icon: Sparkles }
           ].map(s => {
             const Icon = s.icon;
             const isCurr = activeStep === s.step;
@@ -724,144 +1038,319 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                 )}
               </div>
 
-              {/* Client Info */}
-              <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                  <Building2 className="w-4 h-4 text-blue-600" />
-                  Datos de la Empresa Cliente
-                </h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              {/* Client Info (Maestro de Clientes & SII) */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-4 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200 pb-3.5">
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      Nombre / Razón Social del Cliente *
-                    </label>
-                    <input
-                      type="text"
-                      value={companyName}
-                      onChange={e => setCompanyName(e.target.value)}
-                      placeholder="ej. Minera Andina del Cobre S.A."
-                      required
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-blue-600" />
+                      Empresa Cliente & Ficha Tributaria (SII)
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Vincule con el Maestro de Clientes o ingrese los datos tributarios y logo para la propuesta.
+                    </p>
                   </div>
 
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      RUT / RFC / Tax ID
-                    </label>
-                    <input
-                      type="text"
-                      value={taxId}
-                      onChange={e => setTaxId(e.target.value)}
-                      placeholder="ej. 76.452.890-3"
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
-                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowClientPicker(!showClientPicker)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      <span>Cargar del Maestro ({availableClients.length})</span>
+                    </button>
 
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      Contacto Principal
-                    </label>
-                    <input
-                      type="text"
-                      value={contactName}
-                      onChange={e => setContactName(e.target.value)}
-                      placeholder="ej. Ing. Roberto Valenzuela"
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveCurrentClientToMaster}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-colors cursor-pointer"
+                      title="Guarda o actualiza este cliente en el catálogo permanente"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Guardar en Maestro</span>
+                    </button>
                   </div>
+                </div>
 
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      Cargo del Contacto
-                    </label>
-                    <input
-                      type="text"
-                      value={contactRole}
-                      onChange={e => setContactRole(e.target.value)}
-                      placeholder="ej. Gerente de TI & Sistemas"
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
+                {/* Toast alert when client is saved */}
+                {clientSavedNotice && (
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-medium text-emerald-800 flex items-center gap-2 animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>¡Cliente guardado exitosamente en el Maestro de Clientes!</span>
                   </div>
+                )}
 
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      Correo Electrónico
-                    </label>
-                    <input
-                      type="email"
-                      value={contactEmail}
-                      onChange={e => setContactEmail(e.target.value)}
-                      placeholder="contacto@empresa.com"
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      Teléfono
-                    </label>
-                    <input
-                      type="text"
-                      value={contactPhone}
-                      onChange={e => setContactPhone(e.target.value)}
-                      placeholder="+56 9 8452 1190"
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      Industria / Sector
-                    </label>
-                    <input
-                      type="text"
-                      value={industry}
-                      onChange={e => setIndustry(e.target.value)}
-                      placeholder="Minería, Retail, Manufactura, etc."
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      País de Operación
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={country}
-                        onChange={e => setCountry(e.target.value)}
-                        placeholder="Chile, México, Uruguay, Brasil, Colombia..."
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      />
+                {/* Quick Client Picker Drawer / Popover */}
+                {showClientPicker && (
+                  <div className="p-3.5 bg-slate-50 border border-blue-200 rounded-xl space-y-2.5 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800">
+                        Seleccionar Cliente desde el Catálogo Permanente:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowClientPicker(false)}
+                        className="text-xs text-slate-500 hover:text-slate-800 font-bold cursor-pointer"
+                      >
+                        ✕ Cerrar
+                      </button>
                     </div>
-                    {/* Quick LatAm Country presets */}
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {[
-                        { name: 'Chile', curr: 'CLP', flag: '🇨🇱' },
-                        { name: 'México', curr: 'MXN', flag: '🇲🇽' },
-                        { name: 'Uruguay', curr: 'USD', flag: '🇺🇾' },
-                        { name: 'Brasil', curr: 'USD', flag: '🇧🇷' },
-                        { name: 'Colombia', curr: 'USD', flag: '🇨🇴' }
-                      ].map(item => (
-                        <button
-                          key={item.name}
-                          type="button"
-                          onClick={() => {
-                            setCountry(item.name);
-                            handleCurrencyChange(item.curr as any);
+
+                    {availableClients.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic py-2">
+                        No hay clientes registrados en el Maestro. Puede registrarlos aquí o en el módulo "Clientes".
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto pr-1">
+                        {availableClients.map(c => (
+                          <div
+                            key={c.id}
+                            onClick={() => handleSelectClientFromMaster(c)}
+                            className="p-2.5 bg-white border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 rounded-lg cursor-pointer transition-all flex items-start gap-2.5 shadow-xs"
+                          >
+                            <div className="w-8 h-8 rounded border border-slate-200 bg-slate-50 flex items-center justify-center shrink-0 overflow-hidden">
+                              {c.logoUrl ? (
+                                <img src={c.logoUrl} alt="" className="w-full h-full object-contain" />
+                              ) : (
+                                <Building2 className="w-4 h-4 text-slate-400" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1 text-xs">
+                              <p className="font-bold text-slate-900 truncate">
+                                {c.fantasyName || c.companyName}
+                              </p>
+                              <p className="text-[11px] text-slate-500 font-mono">
+                                RUT: {c.taxId || 'S/RUT'}
+                              </p>
+                              <p className="text-[10px] text-slate-400 truncate">
+                                {c.industry} · {c.city || c.country}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Main Client Data & Logo Form */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                  {/* Left Column: Logo & Branding */}
+                  <div className="space-y-3">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Logo del Cliente (para la propuesta)
+                    </label>
+                    <LogoUploader
+                      value={clientLogoUrl}
+                      onChange={setClientLogoUrl}
+                      placeholderText="Subir logo corporativo del cliente"
+                      helperText="Aparecerá en portada y pie de propuesta. PNG o SVG con fondo transparente recomendado."
+                    />
+                  </div>
+
+                  {/* Right 2 Columns: Identification & SII */}
+                  <div className="lg:col-span-2 space-y-3 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Razón Social del Cliente (SII) *
+                        </label>
+                        <input
+                          type="text"
+                          value={companyName}
+                          onChange={e => setCompanyName(e.target.value)}
+                          placeholder="ej. Distribuidora y Logística Nacional S.A."
+                          required
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Nombre de Fantasía (Comercial)
+                        </label>
+                        <input
+                          type="text"
+                          value={fantasyName}
+                          onChange={e => setFantasyName(e.target.value)}
+                          placeholder="ej. LogiTech Express"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          RUT / Tax ID (SII)
+                        </label>
+                        <input
+                          type="text"
+                          value={taxId}
+                          onChange={e => setTaxId(formatRut(e.target.value))}
+                          placeholder="76.123.456-7"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Giro Comercial (SII)
+                        </label>
+                        <input
+                          type="text"
+                          value={businessActivity}
+                          onChange={e => setBusinessActivity(e.target.value)}
+                          placeholder="ej. Servicios de consultoría y soluciones informáticas"
+                          list="common-giros-list"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                        <datalist id="common-giros-list">
+                          {COMMON_GIROS_SII.map(g => (
+                            <option key={g} value={g} />
+                          ))}
+                        </datalist>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Dirección Tributaria
+                        </label>
+                        <input
+                          type="text"
+                          value={taxAddress}
+                          onChange={e => setTaxAddress(e.target.value)}
+                          placeholder="Av. Apoquindo 4500, Of. 1201"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Comuna
+                        </label>
+                        <input
+                          type="text"
+                          value={comuna}
+                          onChange={e => setComuna(e.target.value)}
+                          placeholder="Las Condes"
+                          list="comunas-list"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                        <datalist id="comunas-list">
+                          {CHILE_COMUNAS.map(c => (
+                            <option key={c} value={c} />
+                          ))}
+                        </datalist>
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Ciudad / País
+                        </label>
+                        <input
+                          type="text"
+                          value={`${city}${country ? `, ${country}` : ''}`}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val.includes(',')) {
+                              const [ci, co] = val.split(',');
+                              setCity(ci.trim());
+                              setCountry(co.trim());
+                            } else {
+                              setCity(val);
+                            }
                           }}
-                          className={`text-[10px] px-2 py-0.5 rounded-full border transition-all cursor-pointer ${
-                            country === item.name
-                              ? 'bg-blue-100 text-blue-800 border-blue-300 font-bold'
-                              : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                          }`}
-                        >
-                          {item.flag} {item.name} ({item.curr})
-                        </button>
-                      ))}
+                          placeholder="Santiago, Chile"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Contacts & Billing */}
+                    <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Contacto Principal
+                        </label>
+                        <input
+                          type="text"
+                          value={contactName}
+                          onChange={e => setContactName(e.target.value)}
+                          placeholder="ej. Ing. Roberto Valenzuela"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Cargo del Contacto
+                        </label>
+                        <input
+                          type="text"
+                          value={contactRole}
+                          onChange={e => setContactRole(e.target.value)}
+                          placeholder="ej. Gerente de TI & Sistemas"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Correo Electrónico
+                        </label>
+                        <input
+                          type="email"
+                          value={contactEmail}
+                          onChange={e => setContactEmail(e.target.value)}
+                          placeholder="contacto@empresa.com"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Teléfono Contacto
+                        </label>
+                        <input
+                          type="text"
+                          value={contactPhone}
+                          onChange={e => setContactPhone(e.target.value)}
+                          placeholder="+56 9 8452 1190"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Email Facturación DTE
+                        </label>
+                        <input
+                          type="email"
+                          value={billingEmail}
+                          onChange={e => setBillingEmail(e.target.value)}
+                          placeholder="dte@empresa.com"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Industria / Sector
+                        </label>
+                        <input
+                          type="text"
+                          value={industry}
+                          onChange={e => setIndustry(e.target.value)}
+                          placeholder="Minería, Retail, Manufactura, etc."
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1569,15 +2058,100 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
           {activeStep === 3 && (
             <div className="space-y-6 animate-in fade-in duration-150">
               
-              {/* Quick Catalog Adder: The explicit requested roles: HCM, MM, LE, PM, QM, ABAP, Basis, Seguridad */}
+              {/* ========================================================================= */}
+              {/* CATÁLOGO DE PROFESIONALES Y TARIFAS OFICIALES PRECARGADAS */}
+              {/* ========================================================================= */}
+              <div className="bg-gradient-to-r from-slate-900 to-blue-950 p-5 rounded-2xl text-white shadow-md space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                        Nómina Oficial & Tarifario Preestablecido
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-300">
+                        Tarifas en <strong>{currency}</strong>
+                      </span>
+                    </div>
+                    <h3 className="text-sm font-bold text-white mt-1 flex items-center gap-2">
+                      <Users className="w-4 h-4 text-blue-400" />
+                      Catálogo de Consultores y Especialistas SAP
+                    </h3>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      Incorpore directamente a los profesionales con su tarifa horaria precalculada en {currency}, sin necesidad de estimar o calcular valores manualmente.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsPickerModalOpen(true)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center gap-2 cursor-pointer shrink-0 self-start sm:self-auto"
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>Ver Catálogo Completo ({catalogProfessionals.length})</span>
+                  </button>
+                </div>
+
+                {/* Quick Roster Carousel / Grid */}
+                <div className="pt-2 border-t border-slate-800">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    Incorporación Rápida con 1 Clic (Tarifa Oficial {currency}):
+                  </span>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                    {catalogProfessionals.slice(0, 8).map(prof => {
+                      const rate = getProfessionalRate(prof, currency);
+                      const isAdded = resources.some(r => r.professionalId === prof.id);
+
+                      return (
+                        <div
+                          key={prof.id}
+                          className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between ${
+                            isAdded
+                              ? 'bg-blue-900/40 border-blue-500/50'
+                              : 'bg-slate-800/80 border-slate-700/80 hover:bg-slate-800 hover:border-blue-400'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-1 text-[9px] mb-1">
+                              <span className="font-mono font-bold text-blue-300">{prof.code}</span>
+                              <span className="text-slate-400 truncate">{prof.seniority}</span>
+                            </div>
+                            <div className="font-bold text-xs text-white truncate">{prof.name}</div>
+                            <div className="text-[10px] text-slate-300 truncate">{prof.roleTitle.split('&')[0]}</div>
+                          </div>
+
+                          <div className="mt-2 pt-2 border-t border-slate-700/60 flex items-center justify-between">
+                            <span className="font-mono font-bold text-xs text-emerald-400">
+                              {formatCurrency(rate, currency, currencySymbol)}/hr
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleAddProfessionalFromCatalog(prof)}
+                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                                isAdded
+                                  ? 'bg-blue-500/30 text-blue-200 hover:bg-blue-500/50'
+                                  : 'bg-blue-600 hover:bg-blue-500 text-white'
+                              }`}
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>{isAdded ? 'Agregar +' : 'Añadir'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Catalog Adder: Standard SAP Modules */}
               <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                     <Plus className="w-3.5 h-3.5 text-blue-600" />
-                    Catálogo Rápido: Agregar Especialistas y Módulos SAP
+                    Catálogo de Módulos SAP Genéricos (Benchmark)
                   </span>
                   <span className="text-[11px] text-slate-500">
-                    Haga clic para añadir el perfil con horas y tarifas sugeridas
+                    Haga clic para añadir el perfil con horas y tarifas sugeridas de mercado
                   </span>
                 </div>
 
@@ -1634,7 +2208,9 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                             value={res.seniority}
                             onChange={e => {
                               const newSeniority = e.target.value as SeniorityLevel;
-                              const newRate = getBenchmarkRate(res.moduleCode, newSeniority, currency);
+                              const newRate = res.professionalId 
+                                ? getBenchmarkRate(res.moduleCode, newSeniority, currency)
+                                : getBenchmarkRate(res.moduleCode, newSeniority, currency);
                               handleUpdateResource(res.id, { 
                                 seniority: newSeniority,
                                 hourlyRate: newRate
@@ -1706,6 +2282,50 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
+                      </div>
+
+                      {/* Consultant Catalog Assignment Selector */}
+                      <div className="mt-2.5 pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <User className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                          <span className="text-[11px] font-semibold text-slate-600 shrink-0">Consultor Asignado:</span>
+                          <select
+                            value={res.professionalId || ''}
+                            onChange={e => handleAssignProfessionalToResource(res.id, e.target.value)}
+                            className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:bg-white focus:ring-1 focus:ring-blue-500 max-w-md truncate"
+                          >
+                            <option value="">-- Perfil Genérico / Asignar Consultor del Catálogo --</option>
+                            {catalogProfessionals.map(prof => {
+                              const profRate = getProfessionalRate(prof, currency);
+                              return (
+                                <option key={prof.id} value={prof.id}>
+                                  {prof.name} - {prof.roleTitle} ({prof.seniority}) • {formatCurrency(profRate, currency, currencySymbol)}/hr
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+
+                        {res.professionalId ? (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              Tarifa del Catálogo Aplicada
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleAssignProfessionalToResource(res.id, res.professionalId!)}
+                              className="text-[10px] text-blue-600 hover:text-blue-800 underline font-medium cursor-pointer"
+                              title="Recalcular tarifa oficial del catálogo para la moneda actual"
+                            >
+                              Re-sincronizar
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic">
+                            Tarifa calculada por benchmark o personalizada
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -2052,6 +2672,507 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
             </div>
           )}
 
+          {/* STEP 6: DOSSIER EDITORIAL (ESTILO BRIDEV) & LEGAL PARAMETERS */}
+          {activeStep === 6 && (
+            <div className="space-y-6 animate-in fade-in duration-150">
+              
+              {/* Banner Explicativo con botón de autocompletado inteligente */}
+              <div className="bg-gradient-to-r from-blue-900 to-indigo-900 text-white p-5 rounded-2xl shadow-md border border-blue-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="space-y-1 max-w-2xl">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/30 text-blue-200 border border-blue-400/30">
+                      Formato Multipágina Editorial Bridev
+                    </span>
+                    <span className="text-xs text-blue-300 font-mono">
+                      v{version} · {code}
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                    Parámetros Narrativos, Matriz de Riesgos y Hoja Legal
+                  </h3>
+                  <p className="text-xs text-blue-100/90 leading-relaxed">
+                    Estos campos alimentan la propuesta ejecutiva estilo Bridev (portada cinemática, "Hoy vs. Queda Construido", gatekeeper día 1, exclusiones por categoría y hoja de firmas). Todo viene precargado con redacción profesional de la industria.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleReloadPresetsForProjectType(projectType)}
+                  className="shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold text-blue-900 bg-white hover:bg-blue-50 shadow-md flex items-center gap-2 transition-all cursor-pointer border border-blue-200"
+                  title="Carga la redacción típica sugerida para este tipo de proyecto"
+                >
+                  <Wand2 className="w-3.5 h-3.5 text-blue-600" />
+                  <span>⚡ Cargar Textos para {projectType}</span>
+                </button>
+              </div>
+
+              {/* 1. Selector Visual de Portada */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-blue-600" />
+                    1. Fotografía y Tema Visual de Portada & Contraportada
+                  </h3>
+                  <span className="text-[11px] text-slate-500">
+                    Define la estética cinemática del documento
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {[
+                    {
+                      id: 'alpine',
+                      title: 'Lago Alpino & Naturaleza',
+                      desc: 'Estilo clásico Bridev (sereno, elegante y reflexivo).',
+                      img: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=600&q=80'
+                    },
+                    {
+                      id: 'corporate',
+                      title: 'Arquitectura Corporativa',
+                      desc: 'Edificios modernos y rascacielos de alta gama.',
+                      img: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80'
+                    },
+                    {
+                      id: 'datacenter',
+                      title: 'Data Center & Alta Tecnología',
+                      desc: 'Infraestructura de servidores, redes y cloud computing.',
+                      img: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80'
+                    }
+                  ].map(t => {
+                    const isSelected = coverTheme === t.id;
+                    return (
+                      <div
+                        key={t.id}
+                        onClick={() => setCoverTheme(t.id as any)}
+                        className={`relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer group ${
+                          isSelected
+                            ? 'border-blue-600 shadow-md ring-2 ring-blue-500/20'
+                            : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div
+                          className="h-24 bg-cover bg-center"
+                          style={{ backgroundImage: `url("${t.img}")` }}
+                        >
+                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-900/30 to-transparent" />
+                          <div className="absolute top-2 right-2">
+                            {isSelected ? (
+                              <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shadow-sm">
+                                <Check className="w-3.5 h-3.5" />
+                              </div>
+                            ) : (
+                              <div className="w-5 h-5 rounded-full bg-slate-900/60 border border-white/40" />
+                            )}
+                          </div>
+                        </div>
+                        <div className="p-3 bg-white">
+                          <p className="text-xs font-bold text-slate-900">{t.title}</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{t.desc}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2. Contraste Clave: "Hoy" vs "Queda Construido" */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                      <Layers className="w-4 h-4 text-blue-600" />
+                      2. Contraste de Valor: Situación Actual ("Hoy") vs. "Qué Queda Construido"
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Aparece en la Página 2 del dossier para evidenciar el dolor del cliente y el retorno de la inversión
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleReloadPresetsForProjectType(projectType)}
+                    className="text-xs font-semibold text-blue-700 hover:text-blue-900 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Restablecer textos sugeridos
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Situación Actual (Hoy) */}
+                  <div className="border border-red-200 bg-red-50/30 rounded-xl p-4 space-y-2">
+                    <label className="block text-xs font-bold text-red-900 uppercase tracking-wide">
+                      Situación Actual (Hoy) · Dolor & Riesgo Operativo
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={currentSituationHoy}
+                      onChange={e => setCurrentSituationHoy(e.target.value)}
+                      placeholder="Describa los problemas actuales del cliente, reprocesos, falta de control..."
+                      className="w-full px-3 py-2 bg-white border border-red-200 rounded-lg text-slate-900 text-xs focus:ring-2 focus:ring-red-400 focus:outline-none leading-relaxed"
+                    />
+                    <p className="text-[10px] text-red-700/80">
+                      Consejo: Explicar por qué mantener el estado actual es costoso o riesgoso.
+                    </p>
+                  </div>
+
+                  {/* Qué Queda Construido */}
+                  <div className="border border-blue-200 bg-blue-50/30 rounded-xl p-4 space-y-2">
+                    <label className="block text-xs font-bold text-blue-950 uppercase tracking-wide">
+                      Qué Queda Construido · Solución & Beneficio Final
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={builtSolutionQuedaConstruido}
+                      onChange={e => setBuiltSolutionQuedaConstruido(e.target.value)}
+                      placeholder="Describa la solución integral entregada, automatizaciones, gobernanza..."
+                      className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none leading-relaxed"
+                    />
+                    <p className="text-[10px] text-blue-700/80">
+                      Consejo: Centrarse en el resultado final concreto y la tranquilidad operativa entregada.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Condición "Listo para Iniciar" (Gatekeeper Día 1) */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-600" />
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                    3. Condición "Listo para Iniciar" (Gate de Inicio Día 1)
+                  </h3>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Cláusula contractual clave que estipula que los días no comienzan a correr sin contrato y accesos
+                </p>
+
+                <textarea
+                  rows={3}
+                  value={gatekeeperCondition}
+                  onChange={e => setGatekeeperCondition(e.target.value)}
+                  className="w-full px-3 py-2 bg-amber-50/40 border border-amber-200 rounded-lg text-slate-900 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none leading-relaxed"
+                />
+              </div>
+
+              {/* 4. Matriz de Riesgos & Mitigación */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      4. Matriz de Riesgos y Mitigación Operativa ({riskItems.length} riesgos)
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Demuestra madurez de gestión y delimita responsabilidades con el cliente (Página 5)
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleResetRiskItems}
+                      className="text-xs font-semibold text-slate-600 hover:text-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+                    >
+                      Restablecer Estándar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddRiskItem}
+                      className="text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Agregar Riesgo
+                    </button>
+                  </div>
+                </div>
+
+                <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+                        <tr>
+                          <th className="p-3 w-1/4">Riesgo Detectado</th>
+                          <th className="p-3 w-1/4">Impacto Potencial</th>
+                          <th className="p-3 w-1/3">Plan de Mitigación</th>
+                          <th className="p-3 w-28 text-center">Responsable</th>
+                          <th className="p-3 w-12 text-center"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        {riskItems.map(r => (
+                          <tr key={r.id} className="hover:bg-slate-50/50">
+                            <td className="p-2.5">
+                              <input
+                                type="text"
+                                value={r.risk}
+                                onChange={e => handleUpdateRiskItem(r.id, { risk: e.target.value })}
+                                className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs font-medium focus:ring-1 focus:ring-blue-500"
+                              />
+                            </td>
+                            <td className="p-2.5">
+                              <input
+                                type="text"
+                                value={r.impact}
+                                onChange={e => handleUpdateRiskItem(r.id, { impact: e.target.value })}
+                                className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:ring-1 focus:ring-blue-500"
+                              />
+                            </td>
+                            <td className="p-2.5">
+                              <input
+                                type="text"
+                                value={r.mitigation}
+                                onChange={e => handleUpdateRiskItem(r.id, { mitigation: e.target.value })}
+                                className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:ring-1 focus:ring-blue-500"
+                              />
+                            </td>
+                            <td className="p-2.5 text-center">
+                              <select
+                                value={r.owner}
+                                onChange={e => handleUpdateRiskItem(r.id, { owner: e.target.value as any })}
+                                className={`px-2 py-1 rounded text-xs font-bold border ${
+                                  r.owner === 'Cliente'
+                                    ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                    : r.owner === 'Consultora'
+                                    ? 'bg-blue-50 text-blue-800 border-blue-300'
+                                    : 'bg-purple-50 text-purple-800 border-purple-300'
+                                }`}
+                              >
+                                <option value="Cliente">Cliente</option>
+                                <option value="Consultora">Consultora</option>
+                                <option value="Ambos">Ambos</option>
+                              </select>
+                            </td>
+                            <td className="p-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteRiskItem(r.id)}
+                                className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50 transition-colors cursor-pointer"
+                                title="Eliminar riesgo"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. Fuera de Alcance Estructurado (4 Categorías Temáticas) */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-blue-600" />
+                      5. Fuera de Alcance Expreso ({outOfScopeCategories.length} categorías)
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Evita expectativas falsas y desviaciones de presupuesto (Página 5)
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleResetOutOfScopeCategories}
+                      className="text-xs font-semibold text-slate-600 hover:text-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+                    >
+                      Restablecer Estándar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddOutOfScopeCategory}
+                      className="text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Agregar Categoría
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {outOfScopeCategories.map((cat, idx) => (
+                    <div key={cat.id} className="border border-slate-200 bg-slate-50/60 rounded-xl p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono text-slate-400 font-bold">0{idx + 1}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteOutOfScopeCategory(cat.id)}
+                          className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        value={cat.title}
+                        onChange={e => handleUpdateOutOfScopeCategory(cat.id, { title: e.target.value })}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:ring-1 focus:ring-blue-500"
+                      />
+                      <textarea
+                        rows={3}
+                        value={cat.description}
+                        onChange={e => handleUpdateOutOfScopeCategory(cat.id, { description: e.target.value })}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-700 focus:ring-1 focus:ring-blue-500 leading-relaxed"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 6. Bloque Legal de Firmas, Contactos y Confidencialidad */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-5">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    <UserCheck className="w-4 h-4 text-blue-600" />
+                    6. Hoja Legal de Firmas y Términos Contractuales
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Aparece en la Página 6 para formalizar la aceptación y en la contraportada
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {/* Consultora Emisora */}
+                  <div className="border border-slate-200 bg-slate-50/50 rounded-xl p-4 space-y-3">
+                    <span className="text-xs font-bold text-slate-900 uppercase tracking-wide block pb-1 border-b border-slate-200">
+                      Líder Comercial Consultora (Quien Firma)
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="col-span-2">
+                        <label className="text-[10px] text-slate-500 block mb-0.5">Nombre Completo</label>
+                        <input
+                          type="text"
+                          value={commercialLead.name}
+                          onChange={e => setCommercialLead({ ...commercialLead, name: e.target.value })}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-medium text-slate-900"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-[10px] text-slate-500 block mb-0.5">Cargo / Título</label>
+                        <input
+                          type="text"
+                          value={commercialLead.role}
+                          onChange={e => setCommercialLead({ ...commercialLead, role: e.target.value })}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-500 block mb-0.5">Correo Electrónico</label>
+                        <input
+                          type="email"
+                          value={commercialLead.email}
+                          onChange={e => setCommercialLead({ ...commercialLead, email: e.target.value })}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-500 block mb-0.5">Teléfono Directo</label>
+                        <input
+                          type="text"
+                          value={commercialLead.phone}
+                          onChange={e => setCommercialLead({ ...commercialLead, phone: e.target.value })}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Representante Legal Cliente */}
+                  <div className="border border-slate-200 bg-slate-50/50 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                      <span className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+                        Representante Autorizado Cliente
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyContactToSigner}
+                        className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Copy className="w-3 h-3" />
+                        Copiar del Contacto Principal
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="col-span-2">
+                        <label className="text-[10px] text-slate-500 block mb-0.5">Nombre Completo del Firmante</label>
+                        <input
+                          type="text"
+                          value={clientSigner.name}
+                          onChange={e => setClientSigner({ ...clientSigner, name: e.target.value })}
+                          placeholder="ej. Roberto Valenzuela Muñoz"
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-medium text-slate-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-500 block mb-0.5">RUT / Tax ID del Firmante</label>
+                        <input
+                          type="text"
+                          value={clientSigner.taxId}
+                          onChange={e => setClientSigner({ ...clientSigner, taxId: e.target.value })}
+                          placeholder="12.345.678-9"
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-500 block mb-0.5">Cargo Institucional</label>
+                        <input
+                          type="text"
+                          value={clientSigner.role}
+                          onChange={e => setClientSigner({ ...clientSigner, role: e.target.value })}
+                          placeholder="Representante Legal / Gerente General"
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Parámetros Legales: Días de Validez y Meses de Reserva */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-200 text-xs">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Validez de la Oferta (Días Corridos)
+                    </label>
+                    <input
+                      type="number"
+                      min="5"
+                      max="180"
+                      value={validityDays}
+                      onChange={e => setValidityDays(Number(e.target.value) || 30)}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium"
+                    />
+                    <span className="text-[11px] text-slate-400 mt-1 block">
+                      Se muestra en portada y resumen contractual (típico: 30 días)
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Reserva y Confidencialidad Recíproca (Meses)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      value={confidentialityMonths}
+                      onChange={e => setConfidentialityMonths(Number(e.target.value) || 6)}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium"
+                    />
+                    <span className="text-[11px] text-slate-400 mt-1 block">
+                      Se imprime en el lateral vertical de todas las páginas (típico: 6 meses)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Navigation Controls inside Form */}
           <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
             <div>
@@ -2067,27 +3188,38 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
-              {activeStep < 5 ? (
+              {activeStep < 6 && (
                 <button
                   type="button"
                   onClick={() => setActiveStep((activeStep + 1) as any)}
                   className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
                 >
-                  Siguiente Paso →
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-lg shadow-sm flex items-center gap-2 transition-colors cursor-pointer"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>{isEditing ? 'Guardar Cambios' : 'Crear Cotización SAP'}</span>
+                  {activeStep === 5 ? 'Siguiente: Personalizar Dossier Bridev (Paso 6) ✨ →' : 'Siguiente Paso →'}
                 </button>
               )}
+
+              <button
+                type="submit"
+                className="px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-lg shadow-sm flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+                <span>{isEditing ? 'Guardar Cambios' : 'Crear Cotización SAP'}</span>
+              </button>
             </div>
           </div>
         </form>
       </div>
+
+      {/* Professional Picker Modal */}
+      <ProfessionalPickerModal
+        isOpen={isPickerModalOpen}
+        onClose={() => setIsPickerModalOpen(false)}
+        professionals={catalogProfessionals}
+        activeCurrency={currency}
+        currencySymbol={currencySymbol}
+        onSelectProfessional={handleAddProfessionalFromCatalog}
+        alreadyAssignedIds={resources.map(r => r.professionalId).filter(Boolean) as string[]}
+      />
     </div>
   );
 };

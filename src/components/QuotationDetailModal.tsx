@@ -20,7 +20,9 @@ import {
   AlertCircle,
   TrendingUp,
   ShieldCheck,
-  FileCheck
+  FileCheck,
+  UserCheck,
+  CheckSquare
 } from 'lucide-react';
 import { Quotation, QuotationStatus, QuotationStatusLog } from '../types';
 import { calculateQuotationTotals, formatCurrency, getStatusBadge } from '../utils/calculations';
@@ -109,11 +111,12 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-sm flex justify-center p-2 sm:p-5">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-5xl w-full flex flex-col max-h-[94vh] overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+      {/* Container occupies 90-92% of the screen width and 90% of height to minimize vertical scrolling */}
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-[92vw] max-w-[94vw] h-[90vh] max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         
         {/* Top Header */}
-        <div className="bg-slate-900 text-white p-4 sm:p-6 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="bg-slate-900 text-white p-4 sm:p-5 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
           <div>
             <div className="flex items-center gap-2.5 flex-wrap">
               <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-blue-900/70 text-blue-300 border border-blue-700/60">
@@ -188,8 +191,8 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
 
         {/* Status Changer Modal Overlay */}
         {showStatusChanger && (
-          <div className="bg-blue-50 border-b border-blue-200 p-4 animate-in fade-in duration-150">
-            <div className="max-w-3xl mx-auto space-y-3">
+          <div className="bg-blue-50 border-b border-blue-200 p-4 shrink-0 animate-in fade-in duration-150">
+            <div className="max-w-4xl mx-auto space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
                   <Clock className="w-4 h-4 text-blue-700" />
@@ -197,7 +200,7 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
                 </span>
                 <button
                   onClick={() => setShowStatusChanger(false)}
-                  className="text-xs text-slate-500 hover:text-slate-800 font-medium"
+                  className="text-xs text-slate-500 hover:text-slate-800 font-medium cursor-pointer"
                 >
                   Cancelar
                 </button>
@@ -212,7 +215,7 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
                       key={st}
                       type="button"
                       onClick={() => setNewStatus(st)}
-                      className={`px-3 py-2 text-xs font-semibold rounded-lg border text-left flex items-center justify-between transition-all ${
+                      className={`px-3 py-2 text-xs font-semibold rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
                         isSelected 
                           ? 'ring-2 ring-blue-600 bg-white border-blue-500 shadow-xs' 
                           : 'bg-white/80 hover:bg-white border-slate-200 text-slate-700'
@@ -260,7 +263,7 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
         )}
 
         {/* Tab Navigation */}
-        <div className="bg-slate-50 border-b border-slate-200 px-6 flex items-center gap-6 text-xs font-semibold text-slate-600">
+        <div className="bg-slate-50 border-b border-slate-200 px-6 flex items-center gap-6 text-xs font-semibold text-slate-600 shrink-0">
           <button
             onClick={() => setActiveTab('overview')}
             className={`py-3 border-b-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
@@ -311,125 +314,278 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6 text-slate-800">
+        <div className="p-4 sm:p-6 md:p-7 overflow-y-auto flex-1 space-y-6 text-slate-800">
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
-              {/* Financial Quick Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
-                  <span className="text-xs text-slate-500">Horas Totales SAP</span>
-                  <p className="text-lg font-bold text-slate-900 mt-0.5">{totals.totalHours} hrs</p>
-                  <span className="text-[11px] text-slate-400">Consultores asignados</span>
+              {/* Financial Quick Cards - Expanded for wide 90% screen */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs">
+                  <span className="text-xs text-slate-500 font-medium">Horas Totales SAP</span>
+                  <p className="text-xl font-extrabold text-slate-900 mt-1">{totals.totalHours} hrs</p>
+                  <span className="text-[11px] text-slate-400">
+                    {quote.resources.length > 0 ? `${quote.resources.length} consultores asignados` : 'Servicios parametrizados'}
+                  </span>
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
-                  <span className="text-xs text-slate-500">Subtotal Consultoría</span>
-                  <p className="text-lg font-bold text-slate-900 mt-0.5">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs">
+                  <span className="text-xs text-slate-500 font-medium">Subtotal Consultoría & Servicios</span>
+                  <p className="text-xl font-extrabold text-slate-900 mt-1">
                     {formatCurrency(totals.subtotalConsulting, quote.currency, quote.currencySymbol)}
                   </p>
-                  <span className="text-[11px] text-slate-400">Tarifa prom: {formatCurrency(totals.averageHourlyRate, quote.currency, quote.currencySymbol)}/h</span>
+                  <span className="text-[11px] text-slate-400">
+                    {totals.totalHours > 0 ? `Tarifa prom: ${formatCurrency(totals.averageHourlyRate, quote.currency, quote.currencySymbol)}/h` : 'Tarificación en base UF'}
+                  </span>
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
-                  <span className="text-xs text-slate-500">Descuento Aplicado</span>
-                  <p className="text-lg font-bold text-emerald-700 mt-0.5">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs">
+                  <span className="text-xs text-slate-500 font-medium">Descuento Comercial</span>
+                  <p className="text-xl font-extrabold text-emerald-700 mt-1">
                     {quote.discountPercentage}% ({formatCurrency(totals.discountAmount, quote.currency, quote.currencySymbol)})
                   </p>
                   <span className="text-[11px] text-slate-400">Aprobación comercial</span>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 shadow-xs">
                   <span className="text-xs font-semibold text-blue-900">Total con Impuestos</span>
-                  <p className="text-lg font-bold text-blue-900 mt-0.5">
+                  <p className="text-xl font-extrabold text-blue-900 mt-1">
                     {formatCurrency(totals.totalAmount, quote.currency, quote.currencySymbol)}
                   </p>
                   <span className="text-[11px] text-blue-700">Incluye {quote.taxRatePercentage}% IVA</span>
                   {quote.currency === 'UF' && (
-                    <div className="mt-1.5 pt-1.5 border-t border-blue-200/60 text-[10px] font-mono text-blue-900 font-bold">
+                    <div className="mt-1.5 pt-1.5 border-t border-blue-200/60 text-[11px] font-mono text-blue-900 font-bold">
                       ≈ $ {new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(convertUfToClp(totals.totalAmount))} CLP (BCCh)
                     </div>
                   )}
                   {quote.currency === 'CLP' && (
-                    <div className="mt-1.5 pt-1.5 border-t border-blue-200/60 text-[10px] font-mono text-slate-700 font-bold">
+                    <div className="mt-1.5 pt-1.5 border-t border-blue-200/60 text-[11px] font-mono text-slate-700 font-bold">
                       ≈ UF {formatUfValue(convertClpToUf(totals.totalAmount))}
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Client and Project Technical Data */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* Client and Project Technical Data - 2 Large Columns side by side */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 {/* Client Info */}
-                <div className="border border-slate-200 rounded-xl p-4 bg-white">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
-                    <Building2 className="w-4 h-4 text-blue-600" />
-                    Cliente & Contacto
-                  </h3>
-                  <div className="space-y-2 text-xs">
+                <div className="border border-slate-200 rounded-xl p-5 bg-white shadow-xs">
+                  <div className="flex items-center justify-between mb-3.5">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                      <Building2 className="w-4 h-4 text-blue-600" />
+                      Cliente & Ficha Tributaria SII
+                    </h3>
+                    {quote.client.logoUrl && (
+                      <div className="h-7 w-auto max-w-[90px] flex items-center justify-center p-0.5 border border-slate-200 rounded-lg bg-slate-50 overflow-hidden">
+                        <img src={quote.client.logoUrl} alt="" className="max-h-full max-w-full object-contain" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-2.5 text-xs">
                     <div>
-                      <span className="text-slate-500 block">Razón Social:</span>
-                      <span className="font-bold text-slate-900 text-sm">{quote.client.companyName}</span>
+                      <span className="text-slate-500 block text-[11px]">Razón Social / Empresa:</span>
+                      <span className="font-bold text-slate-900 text-sm">{quote.client.fantasyName || quote.client.companyName}</span>
+                      {quote.client.fantasyName && quote.client.fantasyName !== quote.client.companyName && (
+                        <span className="text-slate-500 text-[11px] block">{quote.client.companyName}</span>
+                      )}
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <span className="text-slate-500 block">RUT / Tax ID:</span>
-                        <span className="font-medium text-slate-800">{quote.client.taxId || 'N/A'}</span>
+                        <span className="text-slate-500 block text-[11px]">RUT / Tax ID:</span>
+                        <span className="font-semibold text-slate-800 font-mono">{quote.client.taxId || 'N/A'}</span>
                       </div>
                       <div>
-                        <span className="text-slate-500 block">Industria:</span>
-                        <span className="font-medium text-slate-800">{quote.client.industry}</span>
+                        <span className="text-slate-500 block text-[11px]">Industria:</span>
+                        <span className="font-semibold text-slate-800">{quote.client.industry}</span>
                       </div>
                     </div>
+                    {quote.client.businessActivity && (
+                      <div>
+                        <span className="text-slate-500 block text-[11px]">Giro Comercial SII:</span>
+                        <span className="text-slate-700 text-[11px]">{quote.client.businessActivity}</span>
+                      </div>
+                    )}
+                    {quote.client.comuna && (
+                      <div>
+                        <span className="text-slate-500 block text-[11px]">Dirección & Comuna:</span>
+                        <span className="text-slate-700 text-[11px]">
+                          {quote.client.taxAddress ? `${quote.client.taxAddress}, ` : ''}{quote.client.comuna}, {quote.client.city || quote.client.country}
+                        </span>
+                      </div>
+                    )}
                     <div>
-                      <span className="text-slate-500 block">Contacto Comercial:</span>
+                      <span className="text-slate-500 block text-[11px]">Contacto Comercial:</span>
                       <span className="font-semibold text-slate-800">{quote.client.contactName}</span>
                       <span className="text-slate-500 text-[11px]"> ({quote.client.contactRole})</span>
                     </div>
-                    <div className="text-slate-600">
+                    <div className="text-slate-600 flex items-center gap-2 text-[11px]">
                       <span>{quote.client.contactEmail}</span>
-                      {quote.client.contactPhone && <span> • {quote.client.contactPhone}</span>}
+                      {quote.client.contactPhone && <span>• {quote.client.contactPhone}</span>}
                     </div>
+                    {quote.client.billingEmail && (
+                      <div className="text-[11px] text-blue-700 pt-1 border-t border-slate-100">
+                        <span>Email DTE: </span>
+                        <span className="font-medium">{quote.client.billingEmail}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Service Specs */}
-                <div className="border border-slate-200 rounded-xl p-4 bg-white">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
+                <div className="border border-slate-200 rounded-xl p-5 bg-white shadow-xs">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-3.5 flex items-center gap-1.5">
                     <Layers className="w-4 h-4 text-blue-600" />
                     Especificación de Consultoría SAP
                   </h3>
-                  <div className="space-y-2 text-xs">
+                  <div className="space-y-2.5 text-xs">
                     <div>
                       <span className="text-slate-500 block">Tipo de Proyecto:</span>
-                      <span className="font-bold text-slate-900">{quote.project.projectType}</span>
+                      <span className="font-bold text-slate-900 text-sm">{quote.project.projectType}</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
                         <span className="text-slate-500 block">Versión de Sistema SAP:</span>
-                        <span className="font-medium text-slate-800">{quote.project.sapSystemVersion}</span>
+                        <span className="font-semibold text-slate-800">{quote.project.sapSystemVersion}</span>
                       </div>
                       <div>
                         <span className="text-slate-500 block">Metodología:</span>
-                        <span className="font-medium text-slate-800">{quote.project.methodology}</span>
+                        <span className="font-semibold text-slate-800">{quote.project.methodology}</span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
                         <span className="text-slate-500 block">Duración Estimada:</span>
-                        <span className="font-medium text-slate-800">{quote.project.durationMonths} meses</span>
+                        <span className="font-semibold text-slate-800">{quote.project.durationMonths} meses</span>
                       </div>
                       <div>
                         <span className="text-slate-500 block">Soporte Hipercare:</span>
-                        <span className="font-medium text-slate-800">{quote.guaranteeHypercareDays} días</span>
+                        <span className="font-semibold text-slate-800">{quote.guaranteeHypercareDays} días</span>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
 
+              {/* SERVICIOS ESPECIALIZADOS (Si aplican para Remuneraciones o Headhunting) */}
+              {(quote.payrollService?.enabled || quote.recruitmentService?.enabled) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  {/* 1. Remuneraciones */}
+                  {quote.payrollService?.enabled && (
+                    <div className="border border-blue-200 bg-blue-50/40 rounded-xl p-5 space-y-4 shadow-xs">
+                      <div className="flex items-center justify-between border-b border-blue-200 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="w-4 h-4 text-blue-700" />
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-blue-900">
+                            Servicios de Proceso de Remuneraciones
+                          </h4>
+                        </div>
+                        <span className="text-xs font-mono font-extrabold text-blue-900">
+                          {formatUfValue(quote.payrollService.totalUF)} UF
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="bg-white p-3 rounded-lg border border-blue-100">
+                          <span className="text-[11px] text-slate-500 block">Proceso Pago Remuneraciones</span>
+                          <span className="font-bold text-slate-900 block mt-0.5">
+                            {quote.payrollService.payrollHeadcount} personas @ {quote.payrollService.payrollRatePerPersonUF} UF/p
+                          </span>
+                          <span className="text-[11px] font-mono text-blue-700 font-semibold mt-1 block">
+                            Subtotal: {formatUfValue(quote.payrollService.payrollSubtotalUF)} UF
+                          </span>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-lg border border-blue-100">
+                          <span className="text-[11px] text-slate-500 block">Control de Asistencia</span>
+                          <span className="font-bold text-slate-900 block mt-0.5">
+                            {quote.payrollService.attendanceHeadcount} personas @ {quote.payrollService.attendanceRatePerPersonUF} UF/p
+                          </span>
+                          <span className="text-[11px] font-mono text-blue-700 font-semibold mt-1 block">
+                            Subtotal: {formatUfValue(quote.payrollService.attendanceSubtotalUF)} UF
+                          </span>
+                        </div>
+                      </div>
+
+                      {quote.payrollService.customServices && quote.payrollService.customServices.length > 0 && (
+                        <div className="bg-white p-3 rounded-lg border border-blue-100 text-xs">
+                          <span className="text-[11px] font-bold text-slate-700 block mb-1.5">
+                            Otros servicios desarrollados a medida ({formatUfValue(quote.payrollService.customServicesTotalUF)} UF):
+                          </span>
+                          <div className="space-y-1.5">
+                            {quote.payrollService.customServices.map((cs, i) => (
+                              <div key={cs.id || i} className="flex justify-between items-center text-[11px] border-b border-slate-100 pb-1 last:border-0 last:pb-0">
+                                <span className="text-slate-700 font-medium">{cs.name} ({cs.quantity} un)</span>
+                                <span className="font-mono text-blue-800 font-bold">{formatUfValue(cs.subtotalUF)} UF</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 2. Reclutamiento & Headhunting */}
+                  {quote.recruitmentService?.enabled && (
+                    <div className="border border-indigo-200 bg-indigo-50/40 rounded-xl p-5 space-y-4 shadow-xs">
+                      <div className="flex items-center justify-between border-b border-indigo-200 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <UserCheck className="w-4 h-4 text-indigo-700" />
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-900">
+                            Servicios de Reclutamiento, Selección / Headhunting
+                          </h4>
+                        </div>
+                        <span className="text-xs font-mono font-extrabold text-indigo-900">
+                          {formatUfValue(quote.recruitmentService.totalUF)} UF
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="bg-white p-3 rounded-lg border border-indigo-100">
+                          <span className="text-[11px] text-slate-500 block">Tipo de Proceso</span>
+                          <span className="font-bold text-slate-900 block mt-0.5">
+                            {quote.recruitmentService.processType}
+                          </span>
+                          <span className="text-[10px] text-slate-400 mt-1 block">Búsqueda directa especializada</span>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-lg border border-indigo-100">
+                          <span className="text-[11px] text-slate-500 block">Costo una Renta Bruta (Success Fee)</span>
+                          {quote.recruitmentService.includeGrossSalaryFee ? (
+                            <>
+                              <span className="font-bold text-slate-900 block mt-0.5">
+                                {quote.recruitmentService.grossSalaryFeePercentage}% de ${new Intl.NumberFormat('es-CL').format(quote.recruitmentService.grossSalaryAmount)} {quote.recruitmentService.grossSalaryCurrency}
+                              </span>
+                              <span className="text-[11px] font-mono text-indigo-700 font-semibold mt-1 block">
+                                Subtotal: {formatUfValue(quote.recruitmentService.grossSalaryFeeTotalUF)} UF
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-[11px] text-slate-500 italic block mt-0.5">No aplica tarifa porcentual</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {quote.recruitmentService.activities && quote.recruitmentService.activities.length > 0 && (
+                        <div className="bg-white p-3 rounded-lg border border-indigo-100 text-xs">
+                          <span className="text-[11px] font-bold text-slate-700 block mb-1.5">
+                            Actividades de Entrevistas varias o Descripción de Cargo ({formatUfValue(quote.recruitmentService.activitiesTotalUF)} UF):
+                          </span>
+                          <div className="space-y-1.5">
+                            {quote.recruitmentService.activities.map((act, i) => (
+                              <div key={act.id || i} className="flex justify-between items-center text-[11px] border-b border-slate-100 pb-1 last:border-0 last:pb-0">
+                                <span className="text-slate-700 font-medium">{act.activityName} ({act.quantity} act @ {act.ratePerActivityUF} UF)</span>
+                                <span className="font-mono text-indigo-800 font-bold">{formatUfValue(act.subtotalUF)} UF</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Scope & Business Objectives */}
-              <div className="border border-slate-200 rounded-xl p-5 bg-white">
+              <div className="border border-slate-200 rounded-xl p-5 bg-white shadow-xs">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
                   Alcance Detallado del Proyecto
                 </h3>
@@ -442,7 +598,7 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
                     <span className="text-xs font-bold text-slate-800 block mb-1.5">
                       Supuestos Clave y Responsabilidades del Cliente:
                     </span>
-                    <ul className="text-xs text-slate-600 space-y-1 list-disc pl-4">
+                    <ul className="text-xs text-slate-600 space-y-1 list-disc pl-4 grid grid-cols-1 md:grid-cols-2 gap-x-6">
                       {quote.project.assumptions.map((ass, i) => (
                         <li key={i}>{ass}</li>
                       ))}
@@ -473,129 +629,129 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
               </div>
 
               {/* Hours Breakdown by Module */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-xs">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-600 block mb-2.5">
                   Distribución de Horas por Módulo SAP
                 </span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {Object.entries(totals.hoursByModule).map(([modName, hrs]) => {
-                    const percentage = Math.round((hrs / totals.totalHours) * 100);
-                    return (
-                      <div key={modName} className="bg-white p-2.5 rounded-lg border border-slate-200">
-                        <div className="flex justify-between text-xs mb-1">
-                          <span className="font-semibold text-slate-800 truncate" title={modName}>{modName}</span>
-                          <span className="font-bold text-blue-700">{hrs}h</span>
-                        </div>
-                        <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                          <div className="bg-blue-600 h-full rounded-full" style={{ width: `${percentage}%` }} />
-                        </div>
-                        <span className="text-[10px] text-slate-400 mt-1 block">{percentage}% del esfuerzo</span>
-                      </div>
-                    );
-                  })}
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                  {Object.entries(totals.hoursByModule).map(([modCode, hrs]) => (
+                    <div key={modCode} className="p-2.5 rounded-lg bg-white border border-slate-200 shadow-2xs">
+                      <span className="text-[11px] font-bold text-slate-500 block">SAP {modCode}</span>
+                      <span className="text-base font-extrabold text-slate-900 block">{hrs} hrs</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
               {/* Resources Table */}
-              <div className="border border-slate-200 rounded-xl overflow-hidden">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
-                    <tr>
-                      <th className="py-2.5 px-3">Módulo SAP</th>
-                      <th className="py-2.5 px-3">Rol / Título</th>
-                      <th className="py-2.5 px-3">Seniority</th>
-                      <th className="py-2.5 px-3">Modalidad</th>
-                      <th className="py-2.5 px-3 text-right">Horas</th>
-                      <th className="py-2.5 px-3 text-right">Tarifa Horaria</th>
-                      <th className="py-2.5 px-3 text-right">Subtotal</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 bg-white">
-                    {quote.resources.map(res => (
-                      <tr key={res.id} className="hover:bg-slate-50">
-                        <td className="py-2.5 px-3 font-semibold text-slate-900">
-                          {res.moduleName}
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-700">
-                          <div>
-                            <span className="font-medium text-slate-900">{res.roleTitle}</span>
-                            {res.responsibilities && (
-                              <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">{res.responsibilities}</p>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
-                            {res.seniority}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-600">{res.modality}</td>
-                        <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{res.hours} hrs</td>
-                        <td className="py-2.5 px-3 text-right text-slate-700">
-                          {formatCurrency(res.hourlyRate, quote.currency, quote.currencySymbol)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-bold text-slate-900">
-                          {formatCurrency(res.hours * res.hourlyRate, quote.currency, quote.currencySymbol)}
-                        </td>
+              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                      <tr>
+                        <th className="p-3">Módulo SAP</th>
+                        <th className="p-3">Perfil / Rol</th>
+                        <th className="p-3">Seniority</th>
+                        <th className="p-3">Modalidad</th>
+                        <th className="p-3 text-right">Horas</th>
+                        <th className="p-3 text-right">Tarifa/Hora</th>
+                        <th className="p-3 text-right">Subtotal</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 bg-white">
+                      {quote.resources.map((res, i) => (
+                        <tr key={res.id || i} className="hover:bg-slate-50/80">
+                          <td className="p-3 font-semibold text-slate-900">
+                            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold">
+                              {res.moduleCode}
+                            </span>
+                            <span className="ml-2 text-slate-600">{res.moduleName}</span>
+                          </td>
+                          <td className="p-3 font-medium text-slate-800">{res.role}</td>
+                          <td className="p-3 text-slate-600">{res.seniority}</td>
+                          <td className="p-3 text-slate-600 capitalize">{res.location}</td>
+                          <td className="p-3 text-right font-bold text-slate-900">{res.hours} hrs</td>
+                          <td className="p-3 text-right text-slate-700 font-mono">
+                            {formatCurrency(res.hourlyRate, quote.currency, quote.currencySymbol)}
+                          </td>
+                          <td className="p-3 text-right font-bold text-blue-900 font-mono">
+                            {formatCurrency(res.subtotal, quote.currency, quote.currencySymbol)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
 
-          {/* TAB 3: MILESTONES */}
+          {/* TAB 3: MILESTONES & BILLING */}
           {activeTab === 'milestones' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">
-                    Hitos de Proyecto y Esquema de Facturación
+                    Hitos de Pago y Plan de Facturación
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Basados en fases de la metodología {quote.project.methodology}
+                    Cronograma de entregables asociados a facturación comercial
                   </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-bold text-slate-900">
+                    Términos: {quote.paymentTerms}
+                  </span>
                 </div>
               </div>
 
-              <div className="border border-slate-200 rounded-xl overflow-hidden">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
-                    <tr>
-                      <th className="py-2.5 px-3">#</th>
-                      <th className="py-2.5 px-3">Fase / Hito</th>
-                      <th className="py-2.5 px-3">Entregables Clave</th>
-                      <th className="py-2.5 px-3">Plazo Estimado</th>
-                      <th className="py-2.5 px-3 text-right">% Facturación</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 bg-white">
-                    {quote.milestones.map((m, idx) => (
-                      <tr key={m.id} className="hover:bg-slate-50">
-                        <td className="py-2.5 px-3 font-bold text-slate-400">{idx + 1}</td>
-                        <td className="py-2.5 px-3 font-semibold text-slate-900">
-                          {m.title}
-                          {m.description && <p className="text-[11px] text-slate-500 font-normal mt-0.5">{m.description}</p>}
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-700">{m.deliverables}</td>
-                        <td className="py-2.5 px-3 text-slate-600">{m.estimatedWeek}</td>
-                        <td className="py-2.5 px-3 text-right font-bold text-slate-900">{m.paymentPercentage}%</td>
+              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                      <tr>
+                        <th className="p-3 w-12 text-center">#</th>
+                        <th className="p-3">Hito / Entregable</th>
+                        <th className="p-3">Mes Estimado</th>
+                        <th className="p-3 text-right">% Facturación</th>
+                        <th className="p-3 text-right">Monto Estimado</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 bg-white">
+                      {quote.milestones.map((m, i) => {
+                        const milestoneAmount = (totals.totalAmount * (m.paymentPercentage / 100));
+                        return (
+                          <tr key={m.id || i} className="hover:bg-slate-50/80">
+                            <td className="p-3 text-center font-bold text-slate-400">{i + 1}</td>
+                            <td className="p-3">
+                              <span className="font-bold text-slate-900 block">{m.title}</span>
+                              <span className="text-slate-500 text-[11px]">{m.deliverable}</span>
+                            </td>
+                            <td className="p-3 text-slate-600">{m.targetMonth}</td>
+                            <td className="p-3 text-right font-bold text-slate-900 font-mono">
+                              {m.paymentPercentage}%
+                            </td>
+                            <td className="p-3 text-right font-bold text-blue-900 font-mono">
+                              {formatCurrency(milestoneAmount, quote.currency, quote.currencySymbol)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
 
-          {/* TAB 4: TRACKING & HISTORY */}
+          {/* TAB 4: STATUS HISTORY & TRACKING LOG */}
           {activeTab === 'history' && (
             <div className="space-y-5">
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                  Agregar Nota de Seguimiento Comercial
-                </h4>
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <MessageSquare className="w-4 h-4 text-blue-600" />
+                  Agregar Nota a la Bitácora de Seguimiento Preventa
+                </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -609,7 +765,7 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
                   />
                   <button
                     onClick={handleAddTrackingNote}
-                    className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+                    className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Agregar Nota</span>
@@ -625,8 +781,8 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
                 {(quote.statusHistory || []).map((log, index) => {
                   const b = getStatusBadge(log.status);
                   return (
-                    <div key={log.id || index} className="p-3.5 rounded-xl border border-slate-200 bg-white flex items-start gap-3">
-                      <div className={`p-1.5 rounded-lg ${b.bg} ${b.text} mt-0.5`}>
+                    <div key={log.id || index} className="p-3.5 rounded-xl border border-slate-200 bg-white flex items-start gap-3 shadow-xs">
+                      <div className={`p-1.5 rounded-lg ${b.bg} ${b.text} mt-0.5 shrink-0`}>
                         <span className={`w-2 h-2 rounded-full ${b.dotColor} block`} />
                       </div>
                       <div className="flex-1">
@@ -651,10 +807,10 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="bg-slate-100 p-4 border-t border-slate-200 flex items-center justify-between">
+        <div className="bg-slate-100 p-4 border-t border-slate-200 flex items-center justify-between shrink-0">
           <button
             onClick={() => onOpenPrintView(quote)}
-            className="text-xs font-semibold text-slate-700 hover:text-slate-900 flex items-center gap-1.5"
+            className="text-xs font-semibold text-slate-700 hover:text-slate-900 flex items-center gap-1.5 cursor-pointer"
           >
             <Printer className="w-3.5 h-3.5" />
             <span>Vista Previa de Impresión</span>
@@ -662,7 +818,7 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
 
           <button
             onClick={onClose}
-            className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+            className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer shadow-xs"
           >
             Cerrar
           </button>
@@ -671,3 +827,4 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
     </div>
   );
 };
+

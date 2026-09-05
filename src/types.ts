@@ -14,6 +14,37 @@ export type SapModuleCode =
 
 export type SeniorityLevel = 'Junior' | 'Semi-Senior' | 'Senior' | 'Lead / Arquitecto';
 
+export interface Professional {
+  id: string;
+  code: string; // e.g. "CONS-HCM-01"
+  name: string;
+  email: string;
+  phone?: string;
+  roleTitle: string; // e.g. "Consultor Senior SAP HCM & Nómina"
+  moduleCode: SapModuleCode;
+  moduleName: string;
+  seniority: SeniorityLevel;
+  location: string; // e.g. "Santiago, Chile"
+  modality: 'Remoto' | 'Híbrido' | 'Presencial';
+  status: 'Disponible' | 'En Asignación' | 'Parcial';
+  rates: {
+    UF: number;
+    CLP: number;
+    USD: number;
+    MXN: number;
+  };
+  costRates?: {
+    UF?: number;
+    CLP?: number;
+    USD?: number;
+    MXN?: number;
+  };
+  skills: string[];
+  certifications?: string[];
+  bio?: string;
+  active: boolean;
+}
+
 export interface SapResourceItem {
   id: string;
   moduleCode: SapModuleCode;
@@ -25,6 +56,8 @@ export interface SapResourceItem {
   subtotal: number;
   modality: 'Remoto' | 'Híbrido' | 'Presencial';
   responsibilities?: string;
+  professionalId?: string; // Optional link to catalog professional
+  professionalName?: string; // e.g. "Diego Rodrigues"
 }
 
 export interface MilestoneItem {
@@ -45,14 +78,55 @@ export interface QuotationStatusLog {
 }
 
 export interface ClientInfo {
-  companyName: string;
-  taxId: string; // RUT / RFC / NIF
+  companyName: string; // Razón Social registrada en SII
+  fantasyName?: string; // Nombre de Fantasía / Comercial (ej. "Twin Ducks Capital")
+  taxId: string; // RUT con formato oficial (ej. "76.452.890-3")
+  businessActivity?: string; // Giro Comercial según SII
+  siiActivityCode?: string; // Código de actividad SII (ej. "649900")
+  taxAddress?: string; // Dirección Tributaria / Domicilio Legal
+  comuna?: string; // Comuna (ej. "Las Condes", "Providencia")
+  city?: string; // Ciudad / Región
+  country: string;
   contactName: string;
   contactRole: string;
   contactEmail: string;
   contactPhone: string;
+  billingEmail?: string; // Correo de facturación electrónica DTE
   industry: string;
-  country: string;
+  logoUrl?: string; // Logo del cliente (Base64 data URL o imagen)
+  notes?: string;
+}
+
+export interface ClientMasterItem extends ClientInfo {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  active: boolean;
+}
+
+export interface CompanyProfile {
+  name: string; // Marca / Nombre de Fantasía (ej. "SAP & TECH CONSULTING")
+  subheading: string; // Subtítulo (ej. "ENTERPRISE SOLUTIONS GROUP")
+  legalName: string; // Razón Social según SII (ej. "SAP & Tech Consulting SpA")
+  taxId: string; // RUT de la consultora (ej. "77.654.321-8")
+  businessActivity: string; // Giro Comercial SII
+  siiActivityCode?: string; // ej. "620200"
+  taxAddress: string; // Dirección Tributaria (ej. "Av. Apoquindo 4501, Piso 14, Of. 1402")
+  comuna: string; // ej. "Las Condes"
+  city: string; // ej. "Santiago"
+  region: string; // ej. "Región Metropolitana"
+  country: string; // ej. "Chile"
+  phone: string; // ej. "+56 2 2987 6543"
+  email: string; // ej. "contacto@techconsulting.cl"
+  website: string; // ej. "www.techconsulting.cl"
+  logoUrl?: string; // Logo de la empresa (Base64 data URL o URL de imagen)
+  legalRepresentative?: {
+    name: string;
+    taxId: string;
+    role: string;
+    email?: string;
+    phone?: string;
+  };
 }
 
 export type ProjectType = 
@@ -174,4 +248,45 @@ export interface Quotation {
   executionAssignedPM?: string;
   actualProjectCode?: string;
   updatedAt: string;
+
+  // Dossier Editorial (Estilo Bridev) Inputs
+  currentSituationHoy?: string;
+  builtSolutionQuedaConstruido?: string;
+  gatekeeperCondition?: string;
+  riskItems?: RiskMitigationItem[];
+  outOfScopeCategories?: OutOfScopeCategoryItem[];
+  commercialLead?: CommercialLeadInfo;
+  clientSigner?: ClientSignerInfo;
+  confidentialityMonths?: number;
+  validityDays?: number;
+  coverTheme?: 'alpine' | 'corporate' | 'datacenter';
+}
+
+export interface RiskMitigationItem {
+  id: string;
+  risk: string;
+  impact: string;
+  mitigation: string;
+  owner: 'Cliente' | 'Consultora' | 'Ambos';
+}
+
+export interface OutOfScopeCategoryItem {
+  id: string;
+  title: string;
+  description: string;
+}
+
+export interface CommercialLeadInfo {
+  name: string;
+  role: string;
+  email: string;
+  phone: string;
+  location: string;
+}
+
+export interface ClientSignerInfo {
+  name: string;
+  taxId: string;
+  role: string;
+  email?: string;
 }

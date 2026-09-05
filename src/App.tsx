@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Quotation, QuotationStatus, SapModuleCode } from './types';
+import { Quotation, QuotationStatus, SapModuleCode, Professional, ClientMasterItem, CompanyProfile } from './types';
 import { INITIAL_QUOTATIONS } from './data/initialQuotations';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -19,6 +19,13 @@ import { ProjectExecutionHandover } from './components/ProjectExecutionHandover'
 import { QuotationPrintView } from './components/QuotationPrintView';
 import { BancoCentralModal } from './components/BancoCentralModal';
 import { SAP_CATALOG_MODULES } from './data/sapModules';
+import { 
+  getStoredProfessionals, 
+  saveStoredProfessionals, 
+  getProfessionalRate 
+} from './data/professionals';
+import { getStoredClients, saveStoredClients } from './data/clientsMaster';
+import { getStoredCompanyProfile, saveStoredCompanyProfile } from './data/companyProfile';
 import { 
   BancoCentralData, 
   fetchBancoCentralIndicators, 
@@ -88,6 +95,162 @@ export default function App() {
   const [editingQuote, setEditingQuote] = useState<Quotation | null>(null);
   const [handoverQuote, setHandoverQuote] = useState<Quotation | null>(null);
   const [printQuote, setPrintQuote] = useState<Quotation | null>(null);
+
+  // Dedicated Professionals & Tariff Catalog State
+  const [professionals, setProfessionals] = useState<Professional[]>(getStoredProfessionals);
+
+  // Dedicated Client Master & Company Profile State
+  const [clients, setClients] = useState<ClientMasterItem[]>(getStoredClients);
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(getStoredCompanyProfile);
+
+  const handleUpdateProfessionals = (updated: Professional[]) => {
+    setProfessionals(updated);
+    saveStoredProfessionals(updated);
+  };
+
+  const handleUpdateClients = (updated: ClientMasterItem[]) => {
+    setClients(updated);
+    saveStoredClients(updated);
+  };
+
+  const handleUpdateCompanyProfile = (updated: CompanyProfile) => {
+    setCompanyProfile(updated);
+    saveStoredCompanyProfile(updated);
+  };
+
+  const handleNewQuoteWithClient = (client: ClientMasterItem) => {
+    const customQuote: Quotation = {
+      id: `quote-${Date.now()}`,
+      code: `COT-SAP-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`,
+      version: '1.0',
+      createdAt: new Date().toISOString().slice(0, 10),
+      validUntil: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+      status: 'draft',
+      currency: 'CLP',
+      currencySymbol: '$',
+      client: {
+        companyName: client.companyName,
+        fantasyName: client.fantasyName,
+        taxId: client.taxId,
+        businessActivity: client.businessActivity,
+        siiActivityCode: client.siiActivityCode,
+        taxAddress: client.taxAddress,
+        comuna: client.comuna,
+        city: client.city,
+        country: client.country,
+        contactName: client.contactName,
+        contactRole: client.contactRole,
+        contactEmail: client.contactEmail,
+        contactPhone: client.contactPhone,
+        billingEmail: client.billingEmail,
+        industry: client.industry,
+        logoUrl: client.logoUrl
+      },
+      project: {
+        projectTitle: `Consultoría y Servicios SAP para ${client.fantasyName || client.companyName}`,
+        projectType: 'Roll-out de Módulos',
+        sapSystemVersion: 'SAP S/4HANA 2023',
+        methodology: 'SAP Activate',
+        durationMonths: 4,
+        estimatedStartDate: new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10),
+        businessObjective: `Implementación y optimización de soluciones empresariales para ${client.companyName}.`,
+        scopeDescription: 'Alcance técnico de consultoría, parametrización y soporte de procesos de negocio.',
+        assumptions: [
+          'Disponibilidad del equipo clave del cliente',
+          'Accesos a ambientes SAP otorgados oportunamente',
+          'Validaciones de pruebas de aceptación UAT en plazos estipulados'
+        ],
+        outOfScope: [
+          'Licencias de software base SAP',
+          'Costos de infraestructura Cloud/Hosting'
+        ]
+      },
+      resources: [],
+      milestones: [],
+      discountPercentage: 0,
+      taxRatePercentage: 19,
+      expensesAmount: 0,
+      paymentTerms: '30% al inicio, 40% en pruebas de integración, 30% al cierre del proyecto.',
+      guaranteeHypercareDays: 30,
+      statusHistory: [],
+      updatedAt: new Date().toISOString().slice(0, 10)
+    };
+
+    setEditingQuote(customQuote);
+    setIsFormOpen(true);
+  };
+
+  const handleNewQuoteWithProfessional = (prof: Professional) => {
+    const currency = 'CLP';
+    const rate = getProfessionalRate(prof, currency);
+    const hours = 160;
+    const customQuote: Quotation = {
+      id: `quote-${Date.now()}`,
+      code: `COT-SAP-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`,
+      version: '1.0',
+      createdAt: new Date().toISOString().slice(0, 10),
+      validUntil: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+      status: 'draft',
+      currency: 'CLP',
+      currencySymbol: '$',
+      client: {
+        companyName: '',
+        taxId: '',
+        contactName: '',
+        contactRole: 'Gerente de TI / Transformación Digital',
+        contactEmail: '',
+        contactPhone: '',
+        industry: 'Manufactura & Operaciones',
+        country: 'Chile'
+      },
+      project: {
+        projectTitle: `Consultoría Especializada SAP ${prof.moduleCode.replace('SAP_', '')} - ${prof.name}`,
+        projectType: 'Soporte AMS / Bolsa de Horas',
+        sapSystemVersion: 'SAP S/4HANA 2023',
+        methodology: 'SAP Activate',
+        durationMonths: 3,
+        estimatedStartDate: new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10),
+        businessObjective: `Provisión de servicios profesionales de alto nivel para ${prof.moduleName}.`,
+        scopeDescription: `Asignación de consultor especialista: ${prof.name} (${prof.roleTitle}). ${prof.bio || ''}`,
+        assumptions: [
+          'Acceso a los sistemas SAP del cliente',
+          'Interlocutor técnico asignado',
+          'Ambiente de pruebas disponible'
+        ],
+        outOfScope: [
+          'Licenciamiento de software SAP',
+          'Infraestructura de hardware o hosting'
+        ]
+      },
+      resources: [
+        {
+          id: `res-${Date.now()}-1`,
+          moduleCode: prof.moduleCode,
+          moduleName: prof.moduleName,
+          roleTitle: `${prof.name} (${prof.roleTitle})`,
+          seniority: prof.seniority,
+          hours: hours,
+          hourlyRate: rate,
+          subtotal: rate * hours,
+          modality: prof.modality,
+          responsibilities: prof.skills?.join(', ') || 'Consultoría especializada SAP.',
+          professionalId: prof.id,
+          professionalName: prof.name
+        }
+      ],
+      milestones: [],
+      discountPercentage: 0,
+      taxRatePercentage: 19,
+      expensesAmount: 0,
+      paymentTerms: '50% al inicio de fase Realize, 50% a la salida en vivo (Go-Live).',
+      guaranteeHypercareDays: 30,
+      statusHistory: [],
+      updatedAt: new Date().toISOString().slice(0, 10)
+    };
+
+    setEditingQuote(customQuote);
+    setIsFormOpen(true);
+  };
 
   // Sync to localStorage
   useEffect(() => {
@@ -271,6 +434,7 @@ export default function App() {
       <QuotationPrintView
         quote={printQuote}
         onBack={() => setPrintQuote(null)}
+        companyProfile={companyProfile}
       />
     );
   }
@@ -287,6 +451,7 @@ export default function App() {
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={handleToggleSidebarCollapse}
+        professionalsCount={professionals.length}
       />
 
       {/* Main Content Area */}
@@ -315,10 +480,18 @@ export default function App() {
               quotations={quotations}
               onSelectQuote={quote => setSelectedQuote(quote)}
               onNewQuotation={handleNewQuotation}
+              onNewQuotationWithClient={handleNewQuoteWithClient}
+              clients={clients}
+              onUpdateClients={handleUpdateClients}
+              companyProfile={companyProfile}
+              onUpdateCompanyProfile={handleUpdateCompanyProfile}
             />
           ) : activeNav === 'resources' ? (
             <ResourceMasterView
+              professionals={professionals}
+              onUpdateProfessionals={handleUpdateProfessionals}
               onNewQuoteWithModule={handleNewQuoteWithModule}
+              onNewQuoteWithProfessional={handleNewQuoteWithProfessional}
             />
           ) : (
             /* Builder & History: Quotation List and Pipeline */
@@ -347,6 +520,17 @@ export default function App() {
           onCancel={() => {
             setIsFormOpen(false);
             setEditingQuote(null);
+          }}
+          professionals={professionals}
+          onSaveClientToMaster={newOrUpdatedClient => {
+            const exists = clients.some(c => c.taxId === newOrUpdatedClient.taxId || c.id === newOrUpdatedClient.id);
+            let updated: ClientMasterItem[];
+            if (exists) {
+              updated = clients.map(c => (c.taxId === newOrUpdatedClient.taxId || c.id === newOrUpdatedClient.id) ? { ...c, ...newOrUpdatedClient } : c);
+            } else {
+              updated = [newOrUpdatedClient, ...clients];
+            }
+            handleUpdateClients(updated);
           }}
         />
       )}

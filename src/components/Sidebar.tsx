@@ -31,6 +31,7 @@ interface SidebarProps {
   onCloseMobile?: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  professionalsCount?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -41,7 +42,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isOpenMobile,
   onCloseMobile,
   isCollapsed,
-  onToggleCollapse
+  onToggleCollapse,
+  professionalsCount
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const hoverTimeoutRef = useRef<number | null>(null);
@@ -100,8 +102,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     { 
       id: 'resources', 
-      label: 'Resource Master',
-      icon: <ShieldCheck className="w-5 h-5 shrink-0" />
+      label: 'Profesionales & Tarifario',
+      icon: <Users className="w-5 h-5 shrink-0" />,
+      count: professionalsCount
     }
   ];
 
