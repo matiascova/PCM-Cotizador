@@ -1,5 +1,6 @@
-import { SeniorityLevel, SapModuleCode } from '../types';
+import { SeniorityLevel, SapModuleCode, SapResourceItem, Professional } from '../types';
 import { getCachedBancoCentralData } from '../services/bcentralService';
+import { getProfessionalRate, getStoredProfessionals } from '../data/professionals';
 
 export type SupportedCurrency = 'CLP' | 'UF' | 'MXN' | 'USD';
 
@@ -217,5 +218,94 @@ export function convertCurrency(
   if (to === 'MXN') return Math.round(amountInUSD * CURRENCIES.MXN.approxRateToUSD);
 
   return Math.round(amountInUSD);
+}
+
+/**
+ * Detects whether an hourly rate is completely out of range for the designated currency
+ * (e.g., 85000 in UF, or 2.2 in CLP)
+ */
+export function isResourceRateMismatched(rate: number, currency: string): boolean {
+  if (!rate || rate <= 0) return false;
+  if (currency === 'UF' && rate > 20) {
+    // In Chile, standard UF consulting hourly rate is 1.0 to 4.5 UF/hr. Anything over 20 is clearly CLP or invalid.
+    return true;
+  }
+  if (currency === 'CLP' && rate < 500) {
+    // In Chile, standard CLP consulting hourly rate is 40.000 to 150.000 CLP/hr. Anything under 500 is clearly UF or USD.
+    return true;
+  }
+  if (currency === 'USD' && rate > 1000) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Rescues and updates the hourly rate of all resources to match the official rate cards
+ * and benchmarks for a target currency (e.g. converting 85,000 CLP to 2.20 UF or vice versa).
+ */
+export function rescueResourceRatesForCurrency(
+  resources: SapResourceItem[],
+  targetCurrency: string,
+  prevCurrency?: string,
+  catalogProfessionals?: Professional[]
+): SapResourceItem[] {
+  const professionals = catalogProfessionals || getStoredProfessionals();
+
+  return resources.map(res => {
+    let newRate = 0;
+
+    // 1. If assigned to a specific professional from catalog, get their exact official rate in target currency
+    if (res.professionalId) {
+      const prof = professionals.find(p => p.id === res.professionalId);
+      if (prof) {
+        newRate = getProfessionalRate(prof, targetCurrency);
+      }
+    }
+
+    // 2. Fetch the official benchmark rate for module and seniority
+    if (!newRate && res.moduleCode && res.seniority) {
+      newRate = getBenchmarkRate(res.moduleCode, res.seniority, targetCurrency);
+    }
+
+    // 3. If moduleCode was custom/unrecognized, convert proportionally using exchange rates
+    if (!newRate || newRate <= 0) {
+      if (prevCurrency && res.hourlyRate > 0) {
+        newRate = convertCurrency(res.hourlyRate, prevCurrency, targetCurrency);
+      } else if (res.hourlyRate > 0) {
+        if (targetCurrency === 'UF' && res.hourlyRate > 20) {
+          newRate = convertCurrency(res.hourlyRate, 'CLP', 'UF');
+        } else if (targetCurrency === 'CLP' && res.hourlyRate < 500) {
+          newRate = convertCurrency(res.hourlyRate, 'UF', 'CLP');
+        } else {
+          newRate = res.hourlyRate;
+        }
+      } else {
+        newRate = getBenchmarkRate('SAP_MM', res.seniority || 'Senior', targetCurrency);
+      }
+    }
+
+    // 4. Sanity check: Ensure UF rates are not astronomical and CLP rates are not tiny
+    if (targetCurrency === 'UF' && newRate > 20) {
+      // In case an unconverted CLP number leaked through
+      const bcData = getCachedBancoCentralData();
+      const liveUf = bcData?.indicators?.uf?.value || 40879.04;
+      newRate = Math.round((newRate / liveUf) * 100) / 100;
+      if (newRate > 10 || newRate <= 0) {
+        newRate = getBenchmarkRate(res.moduleCode || 'SAP_MM', res.seniority || 'Senior', 'UF');
+      }
+    } else if (targetCurrency === 'CLP' && newRate > 0 && newRate < 500) {
+      const bcData = getCachedBancoCentralData();
+      const liveUf = bcData?.indicators?.uf?.value || 40879.04;
+      newRate = Math.round(newRate * liveUf);
+    }
+
+    const hours = Number(res.hours) || 0;
+    return {
+      ...res,
+      hourlyRate: newRate,
+      subtotal: hours * newRate
+    };
+  });
 }
 

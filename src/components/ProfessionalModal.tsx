@@ -15,12 +15,13 @@ import {
   Clock
 } from 'lucide-react';
 import { Professional, SapModuleCode, SeniorityLevel } from '../types';
-import { SAP_CATALOG_MODULES } from '../data/sapModules';
+import { SapCatalogModule, getStoredModules, getModuleBenchmarkRate } from '../data/sapModules';
 import { getBenchmarkRate } from '../utils/currencies';
 
 interface ProfessionalModalProps {
   isOpen: boolean;
   professional: Professional | null; // null if creating
+  modules?: SapCatalogModule[];
   onClose: () => void;
   onSave: (professional: Professional) => void;
 }
@@ -28,6 +29,7 @@ interface ProfessionalModalProps {
 export const ProfessionalModal: React.FC<ProfessionalModalProps> = ({
   isOpen,
   professional,
+  modules = getStoredModules(),
   onClose,
   onSave
 }) => {
@@ -38,7 +40,7 @@ export const ProfessionalModal: React.FC<ProfessionalModalProps> = ({
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [roleTitle, setRoleTitle] = useState('');
-  const [moduleCode, setModuleCode] = useState<SapModuleCode>('SAP_MM');
+  const [moduleCode, setModuleCode] = useState<SapModuleCode>(() => modules[0]?.code || 'SAP_MM');
   const [seniority, setSeniority] = useState<SeniorityLevel>('Senior');
   const [location, setLocation] = useState('Santiago, Chile');
   const [modality, setModality] = useState<'Remoto' | 'Híbrido' | 'Presencial'>('Híbrido');
@@ -113,10 +115,11 @@ export const ProfessionalModal: React.FC<ProfessionalModalProps> = ({
 
   // Recalculate suggested benchmark rates when module or seniority changes in new mode
   const handleAutoFillRatesFromBenchmark = () => {
-    const bUF = getBenchmarkRate(moduleCode, seniority, 'UF');
-    const bCLP = getBenchmarkRate(moduleCode, seniority, 'CLP');
-    const bUSD = getBenchmarkRate(moduleCode, seniority, 'USD');
-    const bMXN = getBenchmarkRate(moduleCode, seniority, 'MXN');
+    const selectedMod = modules.find(m => m.code === moduleCode);
+    const bUF = selectedMod ? getModuleBenchmarkRate(selectedMod, seniority, 'UF') : getBenchmarkRate(moduleCode, seniority, 'UF');
+    const bCLP = selectedMod ? getModuleBenchmarkRate(selectedMod, seniority, 'CLP') : getBenchmarkRate(moduleCode, seniority, 'CLP');
+    const bUSD = selectedMod ? getModuleBenchmarkRate(selectedMod, seniority, 'USD') : getBenchmarkRate(moduleCode, seniority, 'USD');
+    const bMXN = selectedMod ? getModuleBenchmarkRate(selectedMod, seniority, 'MXN') : getBenchmarkRate(moduleCode, seniority, 'MXN');
 
     setRateUF(bUF);
     setRateCLP(bCLP);
@@ -135,7 +138,7 @@ export const ProfessionalModal: React.FC<ProfessionalModalProps> = ({
       return;
     }
 
-    const modObj = SAP_CATALOG_MODULES.find(m => m.code === moduleCode);
+    const modObj = modules.find(m => m.code === moduleCode);
 
     const updatedProfessional: Professional = {
       id: professional?.id || `prof-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -143,7 +146,7 @@ export const ProfessionalModal: React.FC<ProfessionalModalProps> = ({
       name: name.trim(),
       email: email.trim(),
       phone: phone.trim(),
-      roleTitle: roleTitle.trim() || `Consultor ${seniority} ${modObj?.shortName || 'SAP'}`,
+      roleTitle: roleTitle.trim() || `Consultor ${seniority} ${modObj?.shortName || 'Especialista'}`,
       moduleCode,
       moduleName: modObj?.name || moduleCode,
       seniority,
@@ -311,9 +314,9 @@ export const ProfessionalModal: React.FC<ProfessionalModalProps> = ({
                   }}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:ring-2 focus:ring-blue-500 focus:bg-white focus:outline-none"
                 >
-                  {SAP_CATALOG_MODULES.map(m => (
+                  {modules.map(m => (
                     <option key={m.code} value={m.code}>
-                      {m.code} - {m.shortName}
+                      {m.code} - {m.shortName} ({m.name})
                     </option>
                   ))}
                 </select>

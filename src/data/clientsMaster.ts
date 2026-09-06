@@ -1,4 +1,11 @@
 import { ClientMasterItem } from '../types';
+import { 
+  TWIN_DUCKS_LOGO_SVG, 
+  MINERA_ANDINA_LOGO_SVG, 
+  ALIMENTOS_PACIFICO_LOGO_SVG, 
+  LOGISTICA_CONO_SUR_LOGO_SVG,
+  getClientLogo 
+} from './defaultClientLogos';
 
 const STORAGE_KEY = 'sap_quotations_clients_master_v1';
 
@@ -20,7 +27,7 @@ export const INITIAL_CLIENTS_MASTER: ClientMasterItem[] = [
     contactPhone: '+56 9 8765 4321',
     billingEmail: 'facturacion@twinducks.cl',
     industry: 'Servicios Financieros & Inversiones',
-    logoUrl: '', // Can be loaded via upload or custom URL
+    logoUrl: TWIN_DUCKS_LOGO_SVG,
     notes: 'Holding de inversiones corporativas. Requieren soporte y parametrización avanzada en consolidación financiera SAP S/4HANA.',
     createdAt: '2026-08-01',
     updatedAt: '2026-09-01',
@@ -43,7 +50,7 @@ export const INITIAL_CLIENTS_MASTER: ClientMasterItem[] = [
     contactPhone: '+56 9 8452 1190',
     billingEmail: 'dte@mineraandina.com',
     industry: 'Minería & Recursos Naturales',
-    logoUrl: '',
+    logoUrl: MINERA_ANDINA_LOGO_SVG,
     notes: 'Gran minería del cobre en II Región. Proyectos en curso: Rollout SAP MM, LE, PM y QM.',
     createdAt: '2026-08-10',
     updatedAt: '2026-08-20',
@@ -89,7 +96,7 @@ export const INITIAL_CLIENTS_MASTER: ClientMasterItem[] = [
     contactPhone: '+56 9 9123 4567',
     billingEmail: 'finanzas@conosurbebidas.cl',
     industry: 'Consumo Masivo & Bebidas',
-    logoUrl: '',
+    logoUrl: LOGISTICA_CONO_SUR_LOGO_SVG,
     notes: 'Rollout logístico y auditoría de inventarios.',
     createdAt: '2026-08-15',
     updatedAt: '2026-09-02',
@@ -112,7 +119,7 @@ export const INITIAL_CLIENTS_MASTER: ClientMasterItem[] = [
     contactPhone: '+56 9 6543 2198',
     billingEmail: 'dte@alimentospacifico.com',
     industry: 'Alimentos & Agroindustria',
-    logoUrl: '',
+    logoUrl: ALIMENTOS_PACIFICO_LOGO_SVG,
     notes: 'Migración a S/4HANA Finance y optimización de costos.',
     createdAt: '2026-08-18',
     updatedAt: '2026-08-30',
@@ -125,7 +132,16 @@ export function getStoredClients(): ClientMasterItem[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return INITIAL_CLIENTS_MASTER;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_CLIENTS_MASTER;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      // Auto-backfill logos if missing
+      return parsed.map((client: ClientMasterItem) => ({
+        ...client,
+        logoUrl: client.logoUrl && client.logoUrl.trim().length > 0 
+          ? client.logoUrl 
+          : getClientLogo(client)
+      }));
+    }
+    return INITIAL_CLIENTS_MASTER;
   } catch (err) {
     console.error('Error reading clients master from localStorage:', err);
     return INITIAL_CLIENTS_MASTER;

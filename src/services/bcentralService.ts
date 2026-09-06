@@ -117,11 +117,16 @@ export function getCachedBancoCentralData(): BancoCentralData {
  */
 export async function fetchBancoCentralIndicators(forceRefresh = false): Promise<BancoCentralData> {
   // 1. Intentar llamar al endpoint de nuestro servidor Express (/api/bcentral/indicators)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
   try {
     const url = forceRefresh ? '/api/bcentral/indicators?refresh=true' : '/api/bcentral/indicators';
     const res = await fetch(url, {
+      signal: controller.signal,
       headers: { 'Accept': 'application/json' }
     });
+    clearTimeout(timeoutId);
 
     if (res.ok) {
       const data: BancoCentralData = await res.json();
@@ -133,13 +138,20 @@ export async function fetchBancoCentralIndicators(forceRefresh = false): Promise
         return data;
       }
     }
-  } catch (err) {
-    console.warn('[Banco Central] Error llamando a /api/bcentral/indicators, intentando fallback directo:', err);
+  } catch {
+    clearTimeout(timeoutId);
   }
 
-  // 2. Fallback de cliente directo a mindicador.cl
+  // 2. Fallback de cliente directo a mindicador.cl si el servidor no respondió
+  const directController = new AbortController();
+  const directTimeoutId = setTimeout(() => directController.abort(), 6000);
+
   try {
-    const directRes = await fetch('https://mindicador.cl/api');
+    const directRes = await fetch('https://mindicador.cl/api', {
+      signal: directController.signal
+    });
+    clearTimeout(directTimeoutId);
+
     if (directRes.ok) {
       const raw = await directRes.json();
       const ufVal = Number(raw?.uf?.valor) || 40879.04;
@@ -197,8 +209,8 @@ export async function fetchBancoCentralIndicators(forceRefresh = false): Promise
       notifyListeners(clientData);
       return clientData;
     }
-  } catch (directErr) {
-    console.warn('[Banco Central] Error en fallback directo, utilizando datos en caché:', directErr);
+  } catch {
+    clearTimeout(directTimeoutId);
   }
 
   // 3. Devolver datos en caché o baseline

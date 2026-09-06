@@ -55,10 +55,110 @@ function getBaselineIndicators() {
   };
 }
 
-async function fetchFromSource(): Promise<any> {
-  // Fetch from mindicador.cl (which mirrors live daily values from Banco Central de Chile)
+async function fetchFromOfficialBcentral(user: string, pass: string): Promise<any | null> {
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const past = new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10);
+
+  const series = [
+    { key: 'uf', code: 'F073.UFF.PRE.Z.D', name: 'Unidad de fomento (UF)' },
+    { key: 'dolar', code: 'F073.TCO.PRE.Z.D', name: 'Dólar observado' },
+    { key: 'euro', code: 'F072.CLP.EUR.N.O.D', name: 'Euro' },
+    { key: 'utm', code: 'F073.UTR.PRE.Z.M', name: 'Unidad tributaria mensual (UTM)' }
+  ];
+
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 4500);
+  const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+  try {
+    const requests = series.map(async s => {
+      const url = `https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx?user=${encodeURIComponent(user)}&pass=${encodeURIComponent(pass)}&firstdate=${past}&lastdate=${today}&timeseries=${s.code}`;
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      if (json?.Codigo !== 0) throw new Error(json?.Descripcion || 'BCCh error');
+      const obs = json?.Series?.Obs;
+      const latest = obs && obs.length > 0 ? obs[obs.length - 1] : null;
+      if (!latest || isNaN(Number(latest.value))) throw new Error(`Sin valor para ${s.key}`);
+      return {
+        key: s.key,
+        name: s.name,
+        code: s.key.toUpperCase(),
+        value: Number(latest.value),
+        date: latest.indexDateString
+      };
+    });
+
+    const results = await Promise.all(requests);
+    clearTimeout(timeoutId);
+
+    const values: Record<string, any> = {};
+    results.forEach(r => {
+      values[r.key] = r;
+    });
+
+    if (!values.uf?.value) return null;
+
+    const ufVal = values.uf.value;
+    const dolarVal = values.dolar?.value || 933.47;
+    const euroVal = values.euro?.value || 1086.06;
+    const utmVal = values.utm?.value || 71721.00;
+    const usdEq = dolarVal > 0 ? Math.round((ufVal / dolarVal) * 100) / 100 : 43.79;
+
+    const nowStr = new Date();
+    const dateFormatted = `${nowStr.getDate().toString().padStart(2, '0')}/${(nowStr.getMonth() + 1).toString().padStart(2, '0')}/${nowStr.getFullYear()}`;
+
+    return {
+      status: 'success',
+      source: 'Banco Central de Chile (API Oficial SIETE)',
+      sourceUrl: 'https://si3.bcentral.cl/SieteRestWS',
+      updatedAt: new Date().toISOString(),
+      dateFormatted,
+      isFallback: false,
+      indicators: {
+        uf: {
+          code: 'UF',
+          name: 'Unidad de fomento (UF)',
+          value: ufVal,
+          unit: 'Pesos (CLP)',
+          date: values.uf.date || today,
+          usdEquivalent: usdEq
+        },
+        dolar: {
+          code: 'USD',
+          name: 'Dólar observado',
+          value: dolarVal,
+          unit: 'Pesos (CLP)',
+          date: values.dolar?.date || today
+        },
+        euro: {
+          code: 'EUR',
+          name: 'Euro',
+          value: euroVal,
+          unit: 'Pesos (CLP)',
+          date: values.euro?.date || today
+        },
+        utm: {
+          code: 'UTM',
+          name: 'Unidad tributaria mensual (UTM)',
+          value: utmVal,
+          unit: 'Pesos (CLP)',
+          date: values.utm?.date || today
+        }
+      }
+    };
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    return null;
+  }
+}
+
+async function fetchFromMindicador(): Promise<any | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 7000);
 
   try {
     const response = await fetch('https://mindicador.cl/api', {
@@ -71,9 +171,7 @@ async function fetchFromSource(): Promise<any> {
 
     clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      throw new Error(`HTTP error ${response.status}`);
-    }
+    if (!response.ok) return null;
 
     const data = await response.json();
     const ufVal = Number(data?.uf?.valor) || 40879.04;
@@ -124,11 +222,39 @@ async function fetchFromSource(): Promise<any> {
         }
       }
     };
-  } catch (err) {
+  } catch {
     clearTimeout(timeoutId);
-    console.warn('[Banco Central API] External fetch failed or timed out, serving cached/baseline data:', err);
-    return getBaselineIndicators();
+    return null;
   }
+}
+
+async function fetchFromSource(): Promise<any> {
+  const bcUser = process.env.BCENTRAL_USER;
+  const bcPass = process.env.BCENTRAL_PASSWORD;
+
+  // 1. Try official Banco Central de Chile SIETE web service if configured
+  if (bcUser && bcPass) {
+    try {
+      const officialData = await fetchFromOfficialBcentral(bcUser, bcPass);
+      if (officialData) {
+        console.log('[Banco Central API] Datos sincronizados exitosamente desde API Oficial SIETE');
+        return officialData;
+      }
+    } catch {}
+  }
+
+  // 2. Fallback to public mirror API (mindicador.cl)
+  try {
+    const mirrorData = await fetchFromMindicador();
+    if (mirrorData) {
+      console.log('[Banco Central API] Datos sincronizados desde mirror público (mindicador.cl)');
+      return mirrorData;
+    }
+  } catch {}
+
+  // 3. Fallback to baseline default data
+  console.log('[Banco Central API] Utilizando indicadores oficiales base en memoria');
+  return getBaselineIndicators();
 }
 
 async function startServer() {

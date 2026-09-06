@@ -29,7 +29,8 @@ import {
   Check,
   Copy,
   Wand2,
-  User
+  User,
+  ShoppingBag
 } from 'lucide-react';
 import { 
   Quotation, 
@@ -47,10 +48,15 @@ import {
   CommercialLeadInfo,
   ClientSignerInfo,
   Professional,
-  ClientMasterItem
+  ClientMasterItem,
+  ResourceStaffingType
 } from '../types';
+import { syncSolpedsForQuotation } from '../services/procurementService';
 import { 
   SAP_CATALOG_MODULES, 
+  SapCatalogModule,
+  getStoredModules,
+  getModuleBenchmarkRate,
   SAP_DEFAULT_MILESTONES, 
   STANDARD_ASSUMPTIONS, 
   STANDARD_OUT_OF_SCOPE 
@@ -62,10 +68,18 @@ import {
   getDossierPresetsByProjectType 
 } from '../data/dossierPresets';
 import { calculateQuotationTotals, formatCurrency } from '../utils/calculations';
-import { CURRENCIES, SupportedCurrency, getBenchmarkRate, convertCurrency } from '../utils/currencies';
+import { 
+  CURRENCIES, 
+  SupportedCurrency, 
+  getBenchmarkRate, 
+  convertCurrency, 
+  isResourceRateMismatched, 
+  rescueResourceRatesForCurrency 
+} from '../utils/currencies';
 import { getCachedBancoCentralData, convertUfToClp, convertClpToUf, formatUfValue } from '../services/bcentralService';
 import { getStoredProfessionals, getProfessionalRate } from '../data/professionals';
 import { getStoredClients } from '../data/clientsMaster';
+import { getClientLogo } from '../data/defaultClientLogos';
 import { ProfessionalPickerModal } from './ProfessionalPickerModal';
 import { LogoUploader } from './LogoUploader';
 import { formatRut, validateRut, CHILE_COMUNAS, COMMON_GIROS_SII } from '../utils/siiUtils';
@@ -78,6 +92,7 @@ interface QuotationFormProps {
   clients?: ClientMasterItem[];
   onSaveClientToMaster?: (client: ClientMasterItem) => void;
   initialClient?: ClientMasterItem | null;
+  modules?: SapCatalogModule[];
 }
 
 export const QuotationForm: React.FC<QuotationFormProps> = ({
@@ -87,10 +102,12 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   professionals: propProfessionals,
   clients: propClients,
   onSaveClientToMaster,
-  initialClient
+  initialClient,
+  modules: propModules
 }) => {
   const isEditing = !!initialQuote;
   const availableClients = propClients || getStoredClients();
+  const catalogModules = propModules || getStoredModules();
 
   // Active step in the structured wizard/tabs (now includes Step 6 for Bridev Dossier & Legal)
   const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
@@ -119,7 +136,9 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   const [contactPhone, setContactPhone] = useState(initialQuote?.client.contactPhone || initialClient?.contactPhone || '');
   const [billingEmail, setBillingEmail] = useState(initialQuote?.client.billingEmail || initialClient?.billingEmail || '');
   const [industry, setIndustry] = useState(initialQuote?.client.industry || initialClient?.industry || 'Manufactura & Operaciones');
-  const [clientLogoUrl, setClientLogoUrl] = useState(initialQuote?.client.logoUrl || initialClient?.logoUrl || '');
+  const [clientLogoUrl, setClientLogoUrl] = useState(
+    initialQuote?.client.logoUrl || initialClient?.logoUrl || (initialQuote?.client ? getClientLogo(initialQuote.client) : initialClient ? getClientLogo(initialClient) : '')
+  );
   const [showClientPicker, setShowClientPicker] = useState(false);
   const [clientSavedNotice, setClientSavedNotice] = useState(false);
 
@@ -268,8 +287,8 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   );
 
   // Resources (The core SAP modules: HCM, MM, LE, PM, QM, ABAP, Basis, Security)
-  const [resources, setResources] = useState<SapResourceItem[]>(
-    initialQuote?.resources || [
+  const [resources, setResources] = useState<SapResourceItem[]>(() => {
+    const raw = initialQuote?.resources || [
       {
         id: 'res-init-1',
         moduleCode: 'SAP_MM',
@@ -294,8 +313,15 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
         modality: 'Remoto',
         responsibilities: 'Desarrollo de CDS views, reportes y formularios.'
       }
-    ]
-  );
+    ];
+
+    const currentCurr = initialQuote?.currency || 'USD';
+    const hasMismatched = raw.some(r => isResourceRateMismatched(r.hourlyRate, currentCurr));
+    if (hasMismatched) {
+      return rescueResourceRatesForCurrency(raw, currentCurr, undefined, propProfessionals || getStoredProfessionals());
+    }
+    return raw;
+  });
 
   // Milestones
   const [milestones, setMilestones] = useState<MilestoneItem[]>(
@@ -312,6 +338,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   const [paymentTerms, setPaymentTerms] = useState(initialQuote?.paymentTerms || 'Facturación contra hito formalmente aceptado (30 días fecha factura).');
   const [guaranteeHypercareDays, setGuaranteeHypercareDays] = useState(initialQuote?.guaranteeHypercareDays || 30);
   const [currencyChangePrompt, setCurrencyChangePrompt] = useState<{ prev: string; next: string } | null>(null);
+  const [currencyFeedbackNotice, setCurrencyFeedbackNotice] = useState<string | null>(null);
 
   // Dynamic calculations for specialized services
   const payrollSubtotalUF = (Number(payrollHeadcount) || 0) * (Number(payrollRatePerPersonUF) || 0);
@@ -441,8 +468,14 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       if (!country || country === 'Chile') setCountry('Uruguay / Brasil');
     }
 
+    // SIEMPRE RESCATAR Y ACTUALIZAR AUTOMÁTICAMENTE LAS TARIFAS HORARIAS A LA NUEVA MONEDA
     if (resources.length > 0 && prevCurr !== newCurr) {
-      setCurrencyChangePrompt({ prev: prevCurr, next: newCurr });
+      setResources(prev => rescueResourceRatesForCurrency(prev, newCurr, prevCurr, catalogProfessionals));
+      setCurrencyFeedbackNotice(`Tarifas horarias convertidas y rescatadas automáticamente a ${newCurr} según el tarifario oficial SAP.`);
+    }
+
+    if (expensesAmount > 0 && prevCurr !== newCurr) {
+      setExpensesAmount(convertCurrency(expensesAmount, prevCurr, newCurr));
     }
   };
 
@@ -451,28 +484,12 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   const [isPickerModalOpen, setIsPickerModalOpen] = useState(false);
 
   const handleApplyBenchmarkRatesForCurrency = () => {
-    setResources(prev => prev.map(r => {
-      let newRate = 0;
-      if (r.professionalId) {
-        const prof = catalogProfessionals.find(p => p.id === r.professionalId);
-        if (prof) {
-          newRate = getProfessionalRate(prof, currency);
-        }
-      }
-      if (!newRate) {
-        newRate = getBenchmarkRate(r.moduleCode, r.seniority, currency);
-      }
-      const hours = Number(r.hours) || 0;
-      return {
-        ...r,
-        hourlyRate: newRate,
-        subtotal: hours * newRate
-      };
-    }));
+    setResources(prev => rescueResourceRatesForCurrency(prev, currency, undefined, catalogProfessionals));
     if (expensesAmount > 0 && currencyChangePrompt) {
       setExpensesAmount(convertCurrency(expensesAmount, currencyChangePrompt.prev, currencyChangePrompt.next));
     }
     setCurrencyChangePrompt(null);
+    setCurrencyFeedbackNotice(`Tarifas sincronizadas exitosamente con el tarifario oficial en ${currency}.`);
   };
 
   // Add Resource from Professionals Catalog (with exact official rate preloaded)
@@ -501,9 +518,12 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   // Assign or reassign a catalog professional to an existing resource row
   const handleAssignProfessionalToResource = (resourceId: string, profId: string) => {
     if (!profId) {
+      const target = resources.find(r => r.id === resourceId);
+      const benchmarkRate = target ? getBenchmarkRate(target.moduleCode, target.seniority, currency) : 0;
       handleUpdateResource(resourceId, {
         professionalId: undefined,
-        professionalName: undefined
+        professionalName: undefined,
+        ...(benchmarkRate > 0 ? { hourlyRate: benchmarkRate, subtotal: (Number(target?.hours) || 120) * benchmarkRate } : {})
       });
       return;
     }
@@ -529,9 +549,9 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   };
 
   // Add Resource from standard SAP modules catalog
-  const handleAddModuleFromCatalog = (catalogMod: typeof SAP_CATALOG_MODULES[0]) => {
+  const handleAddModuleFromCatalog = (catalogMod: SapCatalogModule) => {
     const defaultSeniority: SeniorityLevel = 'Senior';
-    const rate = getBenchmarkRate(catalogMod.code, defaultSeniority, currency);
+    const rate = getModuleBenchmarkRate(catalogMod, defaultSeniority, currency);
     const hours = 120;
 
     const newRes: SapResourceItem = {
@@ -544,7 +564,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       hourlyRate: rate,
       subtotal: hours * rate,
       modality: 'Híbrido',
-      responsibilities: catalogMod.defaultResponsibilities
+      responsibilities: catalogMod.defaultResponsibilities || 'Consultoría y ejecución especializada.'
     };
 
     setResources([...resources, newRes]);
@@ -671,7 +691,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
     setContactPhone(c.contactPhone || '');
     setBillingEmail(c.billingEmail || c.contactEmail || '');
     setIndustry(c.industry || 'Manufactura & Operaciones');
-    setClientLogoUrl(c.logoUrl || '');
+    setClientLogoUrl(c.logoUrl || getClientLogo(c));
     setShowClientPicker(false);
   };
 
@@ -854,7 +874,14 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       coverTheme
     };
 
-    onSave(savedQuotation);
+    // Sincronizar SOLPEDs de Servicio para recursos externos (ME51N)
+    const { updatedResources } = syncSolpedsForQuotation(savedQuotation);
+    const finalQuotationToSave: Quotation = {
+      ...savedQuotation,
+      resources: updatedResources
+    };
+
+    onSave(finalQuotationToSave);
   };
 
   return (
@@ -1006,6 +1033,23 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                         Tarifas estándar SAP configuradas en UF (ej. Senior: ~2,20 UF/hr). La facturación se liquida en Pesos Chilenos (CLP) según el valor oficial de la UF a la fecha de emisión de cada factura.
                       </p>
                     </div>
+                  </div>
+                )}
+
+                {/* Currency Feedback Notification */}
+                {currencyFeedbackNotice && (
+                  <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3 text-xs text-emerald-900 animate-in fade-in">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{currencyFeedbackNotice}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCurrencyFeedbackNotice(null)}
+                      className="text-emerald-700 hover:text-emerald-900 font-bold text-xs cursor-pointer p-1"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 )}
 
@@ -2156,7 +2200,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                 </div>
 
                 <div className="flex flex-wrap gap-1.5">
-                  {SAP_CATALOG_MODULES.map(mod => (
+                  {catalogModules.map(mod => (
                     <button
                       key={mod.code}
                       type="button"
@@ -2173,14 +2217,50 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
 
               {/* Resources Table */}
               <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
-                <div className="bg-slate-100 p-3 border-b border-slate-200 flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-800">
-                    Staffing Plan de la Cotización ({resources.length} perfiles agregados)
-                  </span>
-                  <span className="font-bold text-blue-700">
+                <div className="bg-slate-100 p-3 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="font-bold text-slate-800">
+                      Staffing Plan de la Cotización ({resources.length} perfiles agregados)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResources(prev => rescueResourceRatesForCurrency(prev, currency, undefined, catalogProfessionals));
+                        setCurrencyFeedbackNotice(`Todas las tarifas han sido recalculadas y sincronizadas con el tarifario oficial en ${currency}.`);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-blue-300 hover:bg-blue-50 text-blue-700 text-[11px] font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+                      title={`Rescatar tarifas oficiales de mercado para ${currency}`}
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Rescatar Tarifas ({currency})</span>
+                    </button>
+                  </div>
+                  <span className="font-bold text-blue-700 shrink-0">
                     Total Horas: {previewTotals.totalHours} hrs | Subtotal: {formatCurrency(previewTotals.subtotalConsulting, currency, currencySymbol)}
                   </span>
                 </div>
+
+                {/* Mismatched rates alert banner if any rate is out of bounds for the current currency */}
+                {resources.some(r => isResourceRateMismatched(r.hourlyRate, currency)) && (
+                  <div className="p-3 bg-amber-50 border-b border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2 text-amber-900 font-medium">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        Se detectaron tarifas que no corresponden a la escala de <strong>{currency}</strong> (por ejemplo valores en otra moneda previa).
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResources(prev => rescueResourceRatesForCurrency(prev, currency, undefined, catalogProfessionals));
+                        setCurrencyFeedbackNotice(`Tarifas rescatadas y sincronizadas exitosamente en ${currency}.`);
+                      }}
+                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg shadow-xs transition-colors cursor-pointer text-xs shrink-0"
+                    >
+                      Rescatar Tarifas Oficiales ({currency})
+                    </button>
+                  </div>
+                )}
 
                 <div className="divide-y divide-slate-200">
                   {resources.map((res, index) => (
@@ -2208,9 +2288,16 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                             value={res.seniority}
                             onChange={e => {
                               const newSeniority = e.target.value as SeniorityLevel;
-                              const newRate = res.professionalId 
-                                ? getBenchmarkRate(res.moduleCode, newSeniority, currency)
-                                : getBenchmarkRate(res.moduleCode, newSeniority, currency);
+                              let newRate = 0;
+                              if (res.professionalId) {
+                                const prof = catalogProfessionals.find(p => p.id === res.professionalId);
+                                if (prof) {
+                                  newRate = getProfessionalRate(prof, currency);
+                                }
+                              }
+                              if (!newRate) {
+                                newRate = getBenchmarkRate(res.moduleCode, newSeniority, currency);
+                              }
                               handleUpdateResource(res.id, { 
                                 seniority: newSeniority,
                                 hourlyRate: newRate
@@ -2254,15 +2341,26 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
 
                         {/* Rate */}
                         <div className="sm:col-span-1">
-                          <label className="text-[10px] text-slate-500 block">Tarifa/Hr</label>
+                          <label className="text-[10px] text-slate-500 block truncate" title={`Tarifa por hora en ${currency}`}>
+                            Tarifa/Hr ({currency})
+                          </label>
                           <input
                             type="number"
-                            min="1"
-                            step="1"
+                            min={currency === 'UF' ? '0.1' : '1'}
+                            step={currency === 'UF' ? '0.01' : '1'}
                             value={res.hourlyRate}
                             onChange={e => handleUpdateResource(res.id, { hourlyRate: Number(e.target.value) || 0 })}
-                            className="w-full mt-0.5 px-2 py-1.5 bg-white border border-slate-300 rounded text-right font-medium text-slate-800 focus:outline-none"
+                            className={`w-full mt-0.5 px-2 py-1.5 bg-white border rounded text-right font-medium focus:outline-none ${
+                              isResourceRateMismatched(res.hourlyRate, currency)
+                                ? 'border-amber-400 bg-amber-50 text-amber-900 ring-1 ring-amber-300'
+                                : 'border-slate-300 text-slate-800 focus:border-blue-500'
+                            }`}
                           />
+                          {currency === 'UF' && res.hourlyRate > 0 && res.hourlyRate <= 20 && (
+                            <span className="text-[9px] text-slate-400 block text-right mt-0.5 truncate" title="Equivalente en CLP">
+                              ~${Math.round(res.hourlyRate * 40879).toLocaleString('es-CL')}
+                            </span>
+                          )}
                         </div>
 
                         {/* Subtotal & Delete */}
@@ -2284,15 +2382,18 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                         </div>
                       </div>
 
-                      {/* Consultant Catalog Assignment Selector */}
-                      <div className="mt-2.5 pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <User className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                          <span className="text-[11px] font-semibold text-slate-600 shrink-0">Consultor Asignado:</span>
+                      {/* Consultant Catalog Assignment Selector & Internal/External Staffing Type */}
+                      <div className="mt-2.5 pt-2 border-t border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-2 text-xs">
+                        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <User className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                            <span className="text-[11px] font-semibold text-slate-600 shrink-0">Consultor Asignado:</span>
+                          </div>
+                          
                           <select
                             value={res.professionalId || ''}
                             onChange={e => handleAssignProfessionalToResource(res.id, e.target.value)}
-                            className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:bg-white focus:ring-1 focus:ring-blue-500 max-w-md truncate"
+                            className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:bg-white focus:ring-1 focus:ring-blue-500 max-w-sm truncate"
                           >
                             <option value="">-- Perfil Genérico / Asignar Consultor del Catálogo --</option>
                             {catalogProfessionals.map(prof => {
@@ -2304,6 +2405,39 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                               );
                             })}
                           </select>
+
+                          {/* Selector Interno vs Externo (Red box in user prompt) */}
+                          <div className="flex items-center gap-0.5 shrink-0 bg-slate-100 p-0.5 rounded-lg border border-slate-200 ml-1">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateResource(res.id, { staffingType: 'internal' })}
+                              className={`px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                                (res.staffingType || 'internal') === 'internal'
+                                  ? 'bg-white text-blue-700 shadow-xs border border-blue-200'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                              title="Recurso interno propio / Nómina (por defecto)"
+                            >
+                              <UserCheck className="w-3 h-3" />
+                              <span>Interno</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateResource(res.id, { 
+                                staffingType: 'external',
+                                supplierName: res.supplierName || 'Partner Subcontratista SAP'
+                              })}
+                              className={`px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                                res.staffingType === 'external'
+                                  ? 'bg-purple-600 text-white shadow-xs'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                              title="Subcontratación externa: generará Solicitud de Pedido SOLPED (ME51N) y posterior Orden de Compra (ME21N)"
+                            >
+                              <Briefcase className="w-3 h-3" />
+                              <span>Externo (SOLPED)</span>
+                            </button>
+                          </div>
                         </div>
 
                         {res.professionalId ? (
@@ -2327,6 +2461,53 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                           </span>
                         )}
                       </div>
+
+                      {/* Subcontratación Externa: Panel de SOLPED SAP MM */}
+                      {res.staffingType === 'external' && (
+                        <div className="mt-2.5 p-3 rounded-xl bg-purple-50/70 border border-purple-200 text-xs flex flex-col md:flex-row md:items-center justify-between gap-3 animate-in fade-in">
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
+                            <div className="flex items-center gap-1.5 text-purple-900 font-bold shrink-0">
+                              <ShoppingBag className="w-4 h-4 text-purple-700" />
+                              <span>Subcontratación Externa:</span>
+                            </div>
+                            
+                            <div className="flex-1 min-w-[220px]">
+                              <input
+                                type="text"
+                                placeholder="Proveedor / Contratista (ej. NTT Data, Consultor Freelance, etc.)"
+                                value={res.supplierName || ''}
+                                onChange={e => handleUpdateResource(res.id, { supplierName: e.target.value })}
+                                className="w-full px-2.5 py-1 bg-white border border-purple-300 rounded-lg text-slate-800 placeholder-purple-400/80 text-xs focus:outline-none focus:ring-1 focus:ring-purple-500"
+                              />
+                            </div>
+
+                            <div className="w-40 shrink-0">
+                              <input
+                                type="number"
+                                placeholder={`Tarifa Costo (${currencySymbol}/hr)`}
+                                value={res.externalCostRate || ''}
+                                onChange={e => handleUpdateResource(res.id, { externalCostRate: Number(e.target.value) || 0 })}
+                                className="w-full px-2.5 py-1 bg-white border border-purple-300 rounded-lg text-slate-800 placeholder-purple-400/80 text-xs focus:outline-none focus:ring-1 focus:ring-purple-500 font-mono"
+                                title="Tarifa costo / compra pactada con el contratista"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            {res.solpedNumber ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-100 text-purple-800 border border-purple-300 text-[11px] font-bold font-mono">
+                                <Check className="w-3.5 h-3.5 text-purple-700" />
+                                <span>SOLPED #{res.solpedNumber}</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-purple-700 border border-purple-300 text-[11px] font-bold shadow-2xs">
+                                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                                <span>Creará SOLPED SAP MM (ME51N)</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -3219,6 +3400,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
         currencySymbol={currencySymbol}
         onSelectProfessional={handleAddProfessionalFromCatalog}
         alreadyAssignedIds={resources.map(r => r.professionalId).filter(Boolean) as string[]}
+        modules={catalogModules}
       />
     </div>
   );

@@ -12,17 +12,60 @@ import {
   UserCheck, 
   RotateCcw,
   Sparkles,
-  Eye
+  Eye,
+  Handshake,
+  Layers
 } from 'lucide-react';
 import { CompanyProfile } from '../types';
 import { LogoUploader } from './LogoUploader';
 import { formatRut, validateRut, CHILE_COMUNAS, COMMON_GIROS_SII } from '../utils/siiUtils';
 import { DEFAULT_COMPANY_PROFILE } from '../data/companyProfile';
+import { 
+  TWIN_DUCKS_LOGO_SVG, 
+  MINERA_ANDINA_LOGO_SVG, 
+  ALIMENTOS_PACIFICO_LOGO_SVG, 
+  LOGISTICA_CONO_SUR_LOGO_SVG 
+} from '../data/defaultClientLogos';
 
 interface CompanySettingsViewProps {
   companyProfile: CompanyProfile;
   onUpdateCompanyProfile: (updated: CompanyProfile) => void;
 }
+
+const PREVIEW_CLIENT_OPTIONS = [
+  {
+    fantasyName: 'TWIN DUCKS CAPITAL',
+    companyName: 'Twin Ducks Capital SpA',
+    taxId: '76.982.415-K',
+    industry: 'Servicios Financieros & Inversiones',
+    subheading: 'INVESTMENT & ADVISORY GROUP',
+    logoUrl: TWIN_DUCKS_LOGO_SVG
+  },
+  {
+    fantasyName: 'MINERA ANDINA',
+    companyName: 'Minera Andina del Cobre S.A.',
+    taxId: '76.452.890-3',
+    industry: 'Gran Minería del Cobre',
+    subheading: 'DIVISIÓN OPERACIONES NORTE',
+    logoUrl: MINERA_ANDINA_LOGO_SVG
+  },
+  {
+    fantasyName: 'ALIMENTOS DEL PACÍFICO',
+    companyName: 'Alimentos del Pacífico S.A.',
+    taxId: '89.031.500-K',
+    industry: 'Agroindustria & Exportación',
+    subheading: 'FOODS & BEVERAGES DIVISION',
+    logoUrl: ALIMENTOS_PACIFICO_LOGO_SVG
+  },
+  {
+    fantasyName: 'LOGÍSTICA CONO SUR',
+    companyName: 'Logística & Bebidas Cono Sur S.A.',
+    taxId: '76.120.340-5',
+    industry: 'Cadena de Suministro & Logística',
+    subheading: 'SUPPLY CHAIN & DISTRIBUTION',
+    logoUrl: LOGISTICA_CONO_SUR_LOGO_SVG
+  }
+];
 
 export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   companyProfile,
@@ -30,6 +73,9 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
 }) => {
   const [profile, setProfile] = useState<CompanyProfile>(companyProfile);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [previewClientIndex, setPreviewClientIndex] = useState(0);
+
+  const selectedPreviewClient = PREVIEW_CLIENT_OPTIONS[previewClientIndex];
 
   const handleRutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatRut(e.target.value);
@@ -112,23 +158,46 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
         </div>
       </div>
 
-      {/* Live Preview of Header Box (Exactly matches user screenshot) */}
-      <div className="bg-slate-950 rounded-2xl border border-slate-800 p-6 text-white shadow-xl relative overflow-hidden">
-        <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
-          <span className="text-xs font-mono font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
-            <Eye className="w-4 h-4" />
-            Previsualización en Vivo de la Carátula de Cotización
-          </span>
-          <span className="text-[11px] text-slate-400">
-            Así se verá en la cabecera superior de la propuesta técnica
-          </span>
+      {/* Live Preview of Header Box - Redesigned Symmetrical Corporate Alliance */}
+      <div className="bg-slate-950 rounded-2xl border border-slate-800 p-6 text-white shadow-2xl relative overflow-hidden space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div>
+            <span className="text-xs font-mono font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+              <Eye className="w-4 h-4" />
+              Previsualización en Vivo de la Carátula de Cotización
+            </span>
+            <span className="text-[11px] text-slate-400 block mt-0.5">
+              Cabecera superior sincronizada con el Dossier Editorial y la exportación a PDF
+            </span>
+          </div>
+
+          {/* Client Preview Switcher */}
+          <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+            <span className="text-[10px] font-mono text-slate-400 px-2 uppercase font-semibold">Cliente:</span>
+            {PREVIEW_CLIENT_OPTIONS.map((c, idx) => (
+              <button
+                key={c.taxId}
+                type="button"
+                onClick={() => setPreviewClientIndex(idx)}
+                className={`px-2.5 py-1 text-[11px] font-mono font-semibold rounded-lg transition-all cursor-pointer ${
+                  previewClientIndex === idx
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                {c.fantasyName.split(' ')[0]}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="bg-slate-900/90 rounded-xl p-5 border border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
-          {/* Left: Our Company (Red Box 1 from User Screenshot) */}
-          <div className="flex items-center gap-3">
+        {/* Carátula Header Card */}
+        <div className="bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 rounded-xl p-5 border border-slate-800/90 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 shadow-inner">
+          
+          {/* Left: Our Company (Emisor) */}
+          <div className="flex items-center gap-4 flex-1">
             {profile.logoUrl ? (
-              <div className="h-12 w-auto max-w-[150px] p-1.5 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center overflow-hidden">
+              <div className="h-14 w-auto min-w-[130px] max-w-[170px] p-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center overflow-hidden shadow-lg shrink-0">
                 <img 
                   src={profile.logoUrl} 
                   alt={profile.name} 
@@ -136,15 +205,19 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                 />
               </div>
             ) : (
-              <div className="w-12 h-12 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-xl text-white tracking-wider shadow-lg shadow-blue-500/30">
+              <div className="w-14 h-14 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-2xl text-white tracking-wider shadow-lg shadow-blue-500/30 shrink-0">
                 ⚡
               </div>
             )}
-            <div>
-              <span className="text-xl font-extrabold tracking-tight text-white block">
+            <div className="space-y-0.5">
+              <span className="text-[9px] font-mono font-bold tracking-widest text-blue-400 uppercase flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                CONSULTORÍA SAP · EMISOR
+              </span>
+              <span className="text-lg font-black tracking-tight text-white block leading-tight">
                 {profile.name || 'SAP & TECH CONSULTING'}
               </span>
-              <span className="text-[10px] tracking-widest text-slate-400 uppercase font-mono block">
+              <span className="text-[10px] tracking-widest text-slate-300 uppercase font-mono block">
                 {profile.subheading || 'ENTERPRISE SOLUTIONS GROUP'}
               </span>
               <span className="text-[10px] text-slate-500 block font-mono">
@@ -153,13 +226,43 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
             </div>
           </div>
 
-          {/* Right: Simulated Client Badge (Red Box 2 from User Screenshot) */}
-          <div className="text-right">
-            <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-mono font-bold text-slate-300">
-              <Building2 className="w-3.5 h-3.5 text-blue-400" />
-              Twin Ducks Capital
+          {/* Center: Alliance Badge Bridge */}
+          <div className="hidden lg:flex flex-col items-center justify-center px-4 border-x border-slate-800 self-stretch">
+            <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 flex items-center gap-1.5 text-[10px] font-mono text-slate-300 font-bold uppercase tracking-wider">
+              <Handshake className="w-3.5 h-3.5 text-blue-400" />
+              <span>Alianza Estratégica</span>
+            </div>
+            <span className="text-[9px] font-mono text-slate-500 mt-1">
+              Propuesta Técnica SAP
             </span>
           </div>
+
+          {/* Right: Selected Client (Destinatario) */}
+          <div className="flex items-center gap-4 flex-1 lg:flex-row-reverse lg:text-right">
+            <div className="h-14 w-auto min-w-[130px] max-w-[170px] p-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center overflow-hidden shadow-lg shrink-0">
+              <img 
+                src={selectedPreviewClient.logoUrl} 
+                alt={selectedPreviewClient.fantasyName} 
+                className="max-h-full max-w-full object-contain"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <span className="text-[9px] font-mono font-bold tracking-widest text-emerald-400 uppercase flex items-center lg:justify-end gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                PREPARADO EXCLUSIVAMENTE PARA
+              </span>
+              <span className="text-lg font-black tracking-tight text-white block leading-tight">
+                {selectedPreviewClient.fantasyName}
+              </span>
+              <span className="text-[10px] tracking-widest text-slate-300 uppercase font-mono block">
+                {selectedPreviewClient.subheading}
+              </span>
+              <span className="text-[10px] text-slate-500 block font-mono">
+                {selectedPreviewClient.companyName} · RUT: {selectedPreviewClient.taxId}
+              </span>
+            </div>
+          </div>
+
         </div>
       </div>
 

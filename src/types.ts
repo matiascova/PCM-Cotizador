@@ -1,6 +1,8 @@
 export type QuotationStatus = 'draft' | 'sent' | 'negotiation' | 'approved' | 'rejected';
 
-export type SapModuleCode = 
+export type SupportedCurrency = 'CLP' | 'UF' | 'MXN' | 'USD' | string;
+
+export type StandardSapModuleCode = 
   | 'SAP_HCM'
   | 'SAP_MM'
   | 'SAP_LE'
@@ -11,6 +13,8 @@ export type SapModuleCode =
   | 'SAP_SECURITY'
   | 'SAP_FICO'
   | 'SAP_PMO_LEAD';
+
+export type SapModuleCode = StandardSapModuleCode | (string & {});
 
 export type SeniorityLevel = 'Junior' | 'Semi-Senior' | 'Senior' | 'Lead / Arquitecto';
 
@@ -45,6 +49,8 @@ export interface Professional {
   active: boolean;
 }
 
+export type ResourceStaffingType = 'internal' | 'external';
+
 export interface SapResourceItem {
   id: string;
   moduleCode: SapModuleCode;
@@ -58,6 +64,15 @@ export interface SapResourceItem {
   responsibilities?: string;
   professionalId?: string; // Optional link to catalog professional
   professionalName?: string; // e.g. "Diego Rodrigues"
+  staffingType?: ResourceStaffingType; // 'internal' (default) | 'external'
+  supplierName?: string; // Proveedor / Subcontratista externo (ej. "Accenture", "NTT Data", "Consultor Freelance")
+  supplierTaxId?: string; // RUT / Tax ID proveedor
+  supplierContact?: string;
+  externalCostRate?: number; // Tarifa costo / compra pactada con el proveedor
+  solpedId?: string; // ID de la Solicitud de Pedido generada
+  solpedNumber?: string; // Código SAP SOLPED (ej. "10000042")
+  purchaseOrderId?: string; // ID de la Orden de Compra
+  purchaseOrderNumber?: string; // Código SAP OC (ej. "45000012")
 }
 
 export interface MilestoneItem {
@@ -289,4 +304,148 @@ export interface ClientSignerInfo {
   taxId: string;
   role: string;
   email?: string;
+}
+
+// ==========================================
+// SAP MM PROCUREMENT & SERVICES SUBCONTRACTING
+// ==========================================
+
+export type SolpedStatus = 
+  | 'draft'               // Borrador inicial
+  | 'pending_approval'   // Pendiente de Estrategia de Liberación (ME54N)
+  | 'approved'           // Liberada / Aprobada para compras
+  | 'converted_to_po'    // Convertida en Orden de Compra (ME21N)
+  | 'rejected';          // Rechazada
+
+export type PurchaseOrderStatus = 
+  | 'draft'              // Borrador de pedido
+  | 'pending_approval'   // Pendiente de Autorización / Liberación
+  | 'authorized'         // Autorizada / Aprobada (ME28 / ME29N)
+  | 'issued'             // Emitida formalmente
+  | 'sent_to_vendor'     // Enviada al Proveedor
+  | 'in_execution'       // En ejecución de servicios (con HES)
+  | 'completed'          // Completada / Concluida
+  | 'rejected'           // Rechazada
+  | 'cancelled';         // Cancelada
+
+export type SapAccountAssignmentType = 'P' | 'K'; // 'P' = Elemento PEP (Proyecto), 'K' = Centro de Coste (CeCo)
+export type SapItemCategory = 'D' | 'F';          // 'D' = Servicio SAP, 'F' = Servicio Externo S/4
+
+/**
+ * Solicitud de Pedido de Servicio SAP (SOLPED - Transacción ME51N / ME52N / ME53N)
+ */
+export interface ServicePurchaseRequisition {
+  id: string;
+  solpedNumber: string;                 // e.g. "10000042" (rango numérico SAP de 10 dígitos)
+  documentType: 'NB' | 'ZSRV';          // NB = Estándar, ZSRV = Servicios Externos
+  itemCategory: SapItemCategory;        // 'D' = Posición de Servicio
+  accountAssignmentCategory: SapAccountAssignmentType; // 'P' (PEP) o 'K' (CeCo)
+  pepElement: string;                   // e.g. "PEP-PRJ-2026-002.1"
+  costCenter?: string;                  // e.g. "CC-10200"
+  
+  // Vínculo con la Cotización Comercial
+  quotationId: string;
+  quotationCode: string;                // e.g. "COT-SAP-2026-002"
+  clientCompanyName: string;            // e.g. "Inversiones Twin Ducks Capital SpA"
+  projectTitle: string;
+  
+  // Detalle del Servicio Subcontratado
+  resourceId: string;
+  positionNumber: number;               // 10, 20, 30...
+  roleTitle: string;                    // e.g. "Consultor Líder de Nómina SAP HCM México"
+  moduleCode: SapModuleCode;
+  moduleName: string;
+  seniority: SeniorityLevel;
+  supplierName: string;                 // Proveedor sugerido / Subcontratista
+  supplierTaxId?: string;
+  
+  // Magnitudes y Costeo
+  hours: number;                        // Horas requeridas
+  unit: 'HUR';                          // Unidad de medida estándar SAP
+  hourlyRate: number;                   // Tarifa compra/costo pactada
+  currency: SupportedCurrency;
+  currencySymbol: string;
+  totalAmount: number;                  // Importe estimado de la SOLPED
+  
+  // Ciclo de Vida & Liberación (ME54N)
+  status: SolpedStatus;
+  releaseStrategy?: {
+    group: string;                      // e.g. "SR" (Servicios)
+    code: string;                       // e.g. "L1", "L2"
+    releasedBy?: string;
+    releasedAt?: string;
+  };
+  requisitioner: string;                // e.g. "PMO Lead / Jefe de Proyecto SAP"
+  createdAt: string;
+  convertedPoId?: string;
+  convertedPoNumber?: string;
+  notes?: string;
+}
+
+/**
+ * Hoja de Entrada de Servicios SAP (HES / Service Entry Sheet - Transacción ML81N)
+ */
+export interface ServiceEntrySheet {
+  id: string;
+  hesNumber: string;                    // e.g. "100021"
+  date: string;
+  hoursDelivered: number;
+  unit: 'HUR';
+  hourlyRate: number;
+  totalAmount: number;
+  description: string;                  // e.g. "Horas ejecutadas Sprint 1 - Parametrización Nómina"
+  consultantName: string;
+  acceptedBy: string;                   // e.g. "Gerente de Proyecto / Roberto Valenzuela"
+  accepted: boolean;
+  status: 'draft' | 'approved' | 'invoiced';
+}
+
+/**
+ * Pedido / Orden de Compra de Servicio SAP (OC - Transacción ME21N / ME22N / ME23N)
+ */
+export interface ServicePurchaseOrder {
+  id: string;
+  poNumber: string;                     // e.g. "4500000101" (rango numérico 45xxxxxx en SAP MM)
+  solpedId: string;
+  solpedNumber: string;
+  documentType: 'NB' | 'ZSRV';
+  
+  // Trazabilidad comercial
+  quotationId: string;
+  quotationCode: string;
+  clientCompanyName: string;
+  projectTitle: string;
+  
+  // Proveedor Adjudicado (Acreedor / Vendor)
+  supplierName: string;
+  supplierTaxId: string;
+  supplierEmail?: string;
+  supplierContact?: string;
+  paymentTerms: string;                 // e.g. "30 días contra HES aprobada y Factura Electrónica"
+  
+  // Servicio Contratado
+  roleTitle: string;
+  moduleCode: SapModuleCode;
+  hoursContracted: number;
+  hourlyRate: number;
+  currency: SupportedCurrency;
+  currencySymbol: string;
+  netAmount: number;
+  taxRatePercentage: number;
+  taxAmount: number;
+  totalAmount: number;
+  
+  // Imputación Contable
+  pepElement: string;
+  costCenter?: string;
+  
+  // Fechas de validez
+  issueDate: string;
+  estimatedDeliveryDate: string;
+  
+  // Estado y Hojas de Entrada de Servicios
+  status: PurchaseOrderStatus;
+  serviceEntrySheets: ServiceEntrySheet[];
+  buyerNotes?: string;
+  companySigner?: string;
 }

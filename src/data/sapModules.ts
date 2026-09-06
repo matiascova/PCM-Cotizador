@@ -2,22 +2,88 @@ import { SapModuleCode, SeniorityLevel } from '../types';
 import { getBenchmarkRate, SupportedCurrency } from '../utils/currencies';
 
 export interface SapCatalogModule {
+  id?: string;
   code: SapModuleCode;
   name: string;
   shortName: string;
-  category: 'Funcional' | 'Técnico' | 'Gestión';
+  category: 'Funcional' | 'Técnico' | 'Gestión' | 'Marketing / Digital' | 'Consultoría' | string;
   description: string;
   defaultResponsibilities: string;
   typicalDeliverables: string[];
   benchmarkRatesUSD: Record<SeniorityLevel, number>;
+  customRates?: {
+    CLP?: Record<SeniorityLevel, number>;
+    UF?: Record<SeniorityLevel, number>;
+    MXN?: Record<SeniorityLevel, number>;
+    USD?: Record<SeniorityLevel, number>;
+  };
+}
+
+const MODULES_STORAGE_KEY = 'sap_catalog_modules_v2';
+
+/**
+ * Obtiene el catálogo de módulos y perfiles desde LocalStorage (con fallback al catálogo inicial)
+ */
+export function getStoredModules(): SapCatalogModule[] {
+  try {
+    const data = localStorage.getItem(MODULES_STORAGE_KEY);
+    if (data) {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading sap modules from localStorage', e);
+  }
+  return SAP_CATALOG_MODULES;
+}
+
+/**
+ * Guarda el catálogo de módulos y perfiles en LocalStorage
+ */
+export function saveStoredModules(modules: SapCatalogModule[]): void {
+  try {
+    localStorage.setItem(MODULES_STORAGE_KEY, JSON.stringify(modules));
+  } catch (e) {
+    console.error('Error saving sap modules to localStorage', e);
+  }
+}
+
+/**
+ * Restaura el catálogo de módulos a los valores originales predeterminados
+ */
+export function resetStoredModules(): SapCatalogModule[] {
+  try {
+    localStorage.removeItem(MODULES_STORAGE_KEY);
+  } catch (e) {
+    console.error('Error resetting sap modules in localStorage', e);
+  }
+  return SAP_CATALOG_MODULES;
 }
 
 export function getModuleBenchmarkRate(
-  moduleCode: SapModuleCode,
+  moduleOrCode: SapCatalogModule | SapModuleCode,
   seniority: SeniorityLevel,
   currency: string = 'USD'
 ): number {
-  return getBenchmarkRate(moduleCode, seniority, currency);
+  if (typeof moduleOrCode === 'string') {
+    return getBenchmarkRate(moduleOrCode, seniority, currency);
+  }
+
+  const moduleObj = moduleOrCode;
+  const curr = currency.toUpperCase() as SupportedCurrency;
+  if (moduleObj.customRates && moduleObj.customRates[curr]?.[seniority] !== undefined) {
+    return moduleObj.customRates[curr]![seniority]!;
+  }
+  if (moduleObj.benchmarkRatesUSD?.[seniority] !== undefined) {
+    const usdRate = moduleObj.benchmarkRatesUSD[seniority];
+    if (curr === 'USD') return usdRate;
+    if (curr === 'UF') return Math.round((usdRate / 42.5) * 100) / 100;
+    if (curr === 'CLP') return Math.round((usdRate * 980) / 1000) * 1000;
+    if (curr === 'MXN') return Math.round((usdRate * 18.5) / 50) * 50;
+  }
+  return getBenchmarkRate(moduleObj.code, seniority, currency);
 }
 
 export const SAP_CATALOG_MODULES: SapCatalogModule[] = [

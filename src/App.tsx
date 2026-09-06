@@ -18,7 +18,15 @@ import { QuotationDetailModal } from './components/QuotationDetailModal';
 import { ProjectExecutionHandover } from './components/ProjectExecutionHandover';
 import { QuotationPrintView } from './components/QuotationPrintView';
 import { BancoCentralModal } from './components/BancoCentralModal';
-import { SAP_CATALOG_MODULES } from './data/sapModules';
+import { ProcurementView } from './components/ProcurementView';
+import { getStoredSolpeds } from './services/procurementService';
+import { 
+  SAP_CATALOG_MODULES, 
+  SapCatalogModule, 
+  getStoredModules, 
+  saveStoredModules, 
+  getModuleBenchmarkRate 
+} from './data/sapModules';
 import { 
   getStoredProfessionals, 
   saveStoredProfessionals, 
@@ -31,6 +39,8 @@ import {
   fetchBancoCentralIndicators, 
   getCachedBancoCentralData 
 } from './services/bcentralService';
+import { getClientLogo } from './data/defaultClientLogos';
+import { isResourceRateMismatched, rescueResourceRatesForCurrency } from './utils/currencies';
 
 const STORAGE_KEY = 'sap_quotations_v1_data';
 
@@ -39,14 +49,34 @@ export default function App() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        const parsed = JSON.parse(stored);
+        let parsed = JSON.parse(stored);
         // If stored data doesn't have the new UF proposal, merge it in
         const hasUfQuote = parsed.some((q: Quotation) => q.currency === 'UF');
         if (!hasUfQuote) {
           const ufQuote = INITIAL_QUOTATIONS.find(q => q.currency === 'UF');
-          if (ufQuote) return [ufQuote, ...parsed];
+          if (ufQuote) parsed = [ufQuote, ...parsed];
         }
-        return parsed;
+        return parsed.map((q: Quotation) => {
+          let updatedQuote = {
+            ...q,
+            client: {
+              ...q.client,
+              logoUrl: q.client?.logoUrl && q.client.logoUrl.trim().length > 0 ? q.client.logoUrl : getClientLogo(q.client),
+              fantasyName: q.client?.fantasyName || q.client?.companyName
+            }
+          };
+
+          // Sanitize any mismatched legacy rates (e.g. 85000 in UF)
+          if (updatedQuote.resources && updatedQuote.resources.some(r => isResourceRateMismatched(r.hourlyRate, updatedQuote.currency))) {
+            const rescuedResources = rescueResourceRatesForCurrency(updatedQuote.resources, updatedQuote.currency);
+            updatedQuote = {
+              ...updatedQuote,
+              resources: rescuedResources
+            };
+          }
+
+          return updatedQuote;
+        });
       }
     } catch (e) {
       console.error('Error loading quotations from localStorage', e);
@@ -66,7 +96,7 @@ export default function App() {
   }, []);
 
   // Navigation state matching Geometric Balance sidebar
-  const [activeNav, setActiveNav] = useState<'builder' | 'history' | 'clients' | 'resources'>('builder');
+  const [activeNav, setActiveNav] = useState<'builder' | 'history' | 'clients' | 'resources' | 'procurement'>('builder');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Collapsible Curtain Sidebar (default true to maximize screen space)
@@ -103,9 +133,17 @@ export default function App() {
   const [clients, setClients] = useState<ClientMasterItem[]>(getStoredClients);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(getStoredCompanyProfile);
 
+  // Dedicated SAP Modules & Custom Profiles Catalog State
+  const [modules, setModules] = useState<SapCatalogModule[]>(getStoredModules);
+
   const handleUpdateProfessionals = (updated: Professional[]) => {
     setProfessionals(updated);
     saveStoredProfessionals(updated);
+  };
+
+  const handleUpdateModules = (updated: SapCatalogModule[]) => {
+    setModules(updated);
+    saveStoredModules(updated);
   };
 
   const handleUpdateClients = (updated: ClientMasterItem[]) => {
@@ -280,8 +318,8 @@ export default function App() {
   };
 
   const handleNewQuoteWithModule = (moduleCode: SapModuleCode) => {
-    const mod = SAP_CATALOG_MODULES.find(m => m.code === moduleCode);
-    const hourlyRate = mod ? mod.benchmarkRatesUSD['Senior'] : 90;
+    const mod = modules.find(m => m.code === moduleCode);
+    const hourlyRate = mod ? getModuleBenchmarkRate(mod, 'Senior', 'USD') : 90;
     const customQuote: Quotation = {
       id: `quote-${Date.now()}`,
       code: `COT-SAP-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`,
@@ -302,14 +340,14 @@ export default function App() {
         country: 'Chile'
       },
       project: {
-        projectTitle: `Implementación & Consultoría Especializada ${mod ? mod.name : 'SAP'}`,
+        projectTitle: `Implementación & Consultoría Especializada ${mod ? mod.name : 'Servicio Especializado'}`,
         projectType: 'Roll-out de Módulos',
         sapSystemVersion: 'SAP S/4HANA 2023',
         methodology: 'SAP Activate',
         durationMonths: 4,
         estimatedStartDate: new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10),
-        businessObjective: `Configuración y puesta en marcha de ${mod ? mod.name : 'módulo SAP'}.`,
-        scopeDescription: `Servicios profesionales de consultoría funcional y técnica para ${mod ? mod.name : 'módulo SAP'}.`,
+        businessObjective: `Configuración y puesta en marcha de ${mod ? mod.name : 'servicio especializado'}.`,
+        scopeDescription: `Servicios profesionales de consultoría funcional y técnica para ${mod ? mod.name : 'servicio especializado'}.`,
         assumptions: [],
         outOfScope: []
       },
@@ -318,13 +356,13 @@ export default function App() {
           id: `res-${Date.now()}-1`,
           moduleCode: moduleCode,
           moduleName: mod ? mod.name : moduleCode,
-          roleTitle: `Consultor Senior ${mod ? mod.name : moduleCode}`,
+          roleTitle: `Consultor Senior ${mod ? mod.shortName : moduleCode}`,
           seniority: 'Senior',
           hours: 160,
           hourlyRate: hourlyRate,
           subtotal: hourlyRate * 160,
           modality: 'Híbrido',
-          responsibilities: mod?.typicalDeliverables[0] || 'Consultoría especializada SAP.'
+          responsibilities: mod?.typicalDeliverables?.[0] || mod?.defaultResponsibilities || 'Consultoría especializada.'
         }
       ],
       milestones: [],
@@ -452,6 +490,7 @@ export default function App() {
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={handleToggleSidebarCollapse}
         professionalsCount={professionals.length}
+        procurementCount={getStoredSolpeds().length}
       />
 
       {/* Main Content Area */}
@@ -471,8 +510,10 @@ export default function App() {
 
         {/* Scrollable Center Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
-          {/* Top KPI Metrics Bar */}
-          <MetricSummaryBar quotations={quotations} />
+          {/* Top KPI Metrics Bar: Presentar solo en el área de trabajo de cotizaciones */}
+          {(activeNav === 'builder' || activeNav === 'history') && (
+            <MetricSummaryBar quotations={quotations} />
+          )}
 
           {/* Views based on sidebar navigation */}
           {activeNav === 'clients' ? (
@@ -490,9 +531,19 @@ export default function App() {
             <ResourceMasterView
               professionals={professionals}
               onUpdateProfessionals={handleUpdateProfessionals}
+              modules={modules}
+              onUpdateModules={handleUpdateModules}
               onNewQuoteWithModule={handleNewQuoteWithModule}
               onNewQuoteWithProfessional={handleNewQuoteWithProfessional}
             />
+          ) : activeNav === 'procurement' ? (
+            <div className="w-[90vw] max-w-[90vw] mx-auto">
+              <ProcurementView
+                quotations={quotations}
+                onSelectQuotation={quote => setSelectedQuote(quote)}
+                onOpenNewQuotation={handleNewQuotation}
+              />
+            </div>
           ) : (
             /* Builder & History: Quotation List and Pipeline */
             <QuotationList
@@ -508,8 +559,10 @@ export default function App() {
           )}
         </div>
 
-        {/* Bottom Workflow Tracking Bar */}
-        <WorkflowTrackingFooter quotations={quotations} />
+        {/* Bottom Workflow Tracking Bar: Presentar solo en el área de trabajo de cotizaciones */}
+        {(activeNav === 'builder' || activeNav === 'history') && (
+          <WorkflowTrackingFooter quotations={quotations} />
+        )}
       </main>
 
       {/* Modal 1: Create / Edit Quotation Form */}
@@ -522,6 +575,7 @@ export default function App() {
             setEditingQuote(null);
           }}
           professionals={professionals}
+          modules={modules}
           onSaveClientToMaster={newOrUpdatedClient => {
             const exists = clients.some(c => c.taxId === newOrUpdatedClient.taxId || c.id === newOrUpdatedClient.id);
             let updated: ClientMasterItem[];

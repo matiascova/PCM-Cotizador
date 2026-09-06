@@ -17,14 +17,15 @@ import {
   PinOff,
   ChevronRight,
   ChevronLeft,
-  Globe2
+  Globe2,
+  ShoppingBag
 } from 'lucide-react';
 import { Quotation } from '../types';
 import { calculateQuotationTotals, formatCurrency } from '../utils/calculations';
 
 interface SidebarProps {
-  activeNav: 'builder' | 'history' | 'clients' | 'resources';
-  setActiveNav: (nav: 'builder' | 'history' | 'clients' | 'resources') => void;
+  activeNav: 'builder' | 'history' | 'clients' | 'resources' | 'procurement';
+  setActiveNav: (nav: 'builder' | 'history' | 'clients' | 'resources' | 'procurement') => void;
   quotations: Quotation[];
   onNewQuotation: () => void;
   isOpenMobile?: boolean;
@@ -32,6 +33,7 @@ interface SidebarProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   professionalsCount?: number;
+  procurementCount?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -43,7 +45,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
   isCollapsed,
   onToggleCollapse,
-  professionalsCount
+  professionalsCount,
+  procurementCount
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const hoverTimeoutRef = useRef<number | null>(null);
@@ -66,7 +69,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const handleNavClick = (id: 'builder' | 'history' | 'clients' | 'resources') => {
+  const handleNavClick = (id: 'builder' | 'history' | 'clients' | 'resources' | 'procurement') => {
     setActiveNav(id);
     if (isCollapsed) {
       setIsHovered(false);
@@ -77,7 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const navItems: { 
-    id: 'builder' | 'history' | 'clients' | 'resources'; 
+    id: 'builder' | 'history' | 'clients' | 'resources' | 'procurement'; 
     label: string; 
     icon: React.ReactNode; 
     count?: number 
@@ -102,9 +105,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     { 
       id: 'resources', 
-      label: 'Profesionales & Tarifario',
+      label: 'Profesionales & Tarifario', 
       icon: <Users className="w-5 h-5 shrink-0" />,
       count: professionalsCount
+    },
+    { 
+      id: 'procurement', 
+      label: 'Compras & SOLPEDs', 
+      icon: <ShoppingBag className="w-5 h-5 shrink-0" />,
+      count: procurementCount
     }
   ];
 

@@ -22,11 +22,12 @@ import {
   ShieldCheck,
   FileCheck,
   UserCheck,
-  CheckSquare
+  CheckSquare,
+  Loader2
 } from 'lucide-react';
 import { Quotation, QuotationStatus, QuotationStatusLog } from '../types';
 import { calculateQuotationTotals, formatCurrency, getStatusBadge } from '../utils/calculations';
-import { downloadQuotationPDF } from '../utils/pdfGenerator';
+import { downloadDossierPDF, downloadQuotationPDF } from '../utils/pdfGenerator';
 import { convertUfToClp, convertClpToUf, formatUfValue } from '../services/bcentralService';
 
 interface QuotationDetailModalProps {
@@ -106,8 +107,22 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
     setNewTrackingNote('');
   };
 
-  const handleDownloadPDF = () => {
-    downloadQuotationPDF(quote);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState('');
+
+  const handleDownloadPDF = async () => {
+    try {
+      setIsDownloading(true);
+      setDownloadProgress('Preparando...');
+      await downloadDossierPDF(quote, undefined, (status) => {
+        setDownloadProgress(status);
+      });
+    } catch (err) {
+      console.error('Error generating PDF:', err);
+    } finally {
+      setIsDownloading(false);
+      setDownloadProgress('');
+    }
   };
 
   return (
@@ -173,11 +188,30 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
             </button>
 
             <button
-              onClick={handleDownloadPDF}
-              className="px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+              onClick={() => onOpenPrintView(quote)}
+              className="px-3 py-2 text-xs font-semibold text-slate-200 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Abrir vista Dossier Editorial para lectura o impresión directa"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span>Descargar PDF</span>
+              <Printer className="w-3.5 h-3.5 text-blue-400" />
+              <span>Dossier / Imprimir</span>
+            </button>
+
+            <button
+              onClick={handleDownloadPDF}
+              disabled={isDownloading}
+              className="px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:opacity-80 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+            >
+              {isDownloading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>{downloadProgress || 'Generando Dossier PDF...'}</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Descargar PDF</span>
+                </>
+              )}
             </button>
 
             <button
@@ -652,7 +686,7 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
                         <th className="p-3">Módulo SAP</th>
                         <th className="p-3">Perfil / Rol</th>
                         <th className="p-3">Seniority</th>
-                        <th className="p-3">Modalidad</th>
+                        <th className="p-3">Origen / Staffing</th>
                         <th className="p-3 text-right">Horas</th>
                         <th className="p-3 text-right">Tarifa/Hora</th>
                         <th className="p-3 text-right">Subtotal</th>
@@ -667,9 +701,38 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
                             </span>
                             <span className="ml-2 text-slate-600">{res.moduleName}</span>
                           </td>
-                          <td className="p-3 font-medium text-slate-800">{res.role}</td>
+                          <td className="p-3 font-medium text-slate-800">
+                            <div>{res.roleTitle || (res as any).role}</div>
+                            {res.professionalName && (
+                              <span className="text-[11px] text-blue-700 block mt-0.5">
+                                Asignado: {res.professionalName}
+                              </span>
+                            )}
+                          </td>
                           <td className="p-3 text-slate-600">{res.seniority}</td>
-                          <td className="p-3 text-slate-600 capitalize">{res.location}</td>
+                          <td className="p-3">
+                            {res.staffingType === 'external' ? (
+                              <div>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold">
+                                  Externo (SOLPED)
+                                </span>
+                                {res.solpedNumber && (
+                                  <span className="text-[10px] font-mono text-purple-900 font-bold block mt-0.5">
+                                    SOLPED #{res.solpedNumber}
+                                  </span>
+                                )}
+                                {res.supplierName && (
+                                  <span className="text-[10px] text-slate-500 block truncate max-w-[140px]" title={res.supplierName}>
+                                    {res.supplierName}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">
+                                Interno (Nómina)
+                              </span>
+                            )}
+                          </td>
                           <td className="p-3 text-right font-bold text-slate-900">{res.hours} hrs</td>
                           <td className="p-3 text-right text-slate-700 font-mono">
                             {formatCurrency(res.hourlyRate, quote.currency, quote.currencySymbol)}

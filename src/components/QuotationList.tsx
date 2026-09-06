@@ -21,7 +21,8 @@ import {
   List, 
   ChevronRight,
   ArrowRight,
-  Sparkles
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { Quotation, QuotationStatus, SapModuleCode } from '../types';
 import { calculateQuotationTotals, formatCurrency, getStatusBadge } from '../utils/calculations';
@@ -83,9 +84,17 @@ export const QuotationList: React.FC<QuotationListProps> = ({
     rejected: quotations.filter(q => q.status === 'rejected').length
   };
 
-  const handleQuickDownloadPDF = (e: React.MouseEvent, quote: Quotation) => {
+  const [downloadingQuoteId, setDownloadingQuoteId] = useState<string | null>(null);
+  const [quoteToDelete, setQuoteToDelete] = useState<Quotation | null>(null);
+
+  const handleQuickDownloadPDF = async (e: React.MouseEvent, quote: Quotation) => {
     e.stopPropagation();
-    downloadQuotationPDF(quote);
+    try {
+      setDownloadingQuoteId(quote.id);
+      await downloadQuotationPDF(quote);
+    } finally {
+      setDownloadingQuoteId(null);
+    }
   };
 
   return (
@@ -323,10 +332,15 @@ export const QuotationList: React.FC<QuotationListProps> = ({
                       <div className="flex items-center gap-1">
                         <button
                           onClick={e => handleQuickDownloadPDF(e, quote)}
-                          className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Descargar PDF Estándar"
+                          disabled={downloadingQuoteId === quote.id}
+                          className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-60 rounded-lg transition-colors cursor-pointer"
+                          title="Descargar Dossier Editorial PDF"
                         >
-                          <Download className="w-4 h-4" />
+                          {downloadingQuoteId === quote.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                          ) : (
+                            <Download className="w-4 h-4" />
+                          )}
                         </button>
                         <button
                           onClick={e => {
@@ -351,12 +365,10 @@ export const QuotationList: React.FC<QuotationListProps> = ({
                         <button
                           onClick={e => {
                             e.stopPropagation();
-                            if (confirm(`¿Eliminar la cotización ${quote.code}?`)) {
-                              onDeleteQuote(quote.id);
-                            }
+                            setQuoteToDelete(quote);
                           }}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                          title="Eliminar"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title="Eliminar Cotización"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -484,6 +496,66 @@ export const QuotationList: React.FC<QuotationListProps> = ({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal de Confirmación de Eliminación In-App */}
+      {quoteToDelete && (
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in"
+          onClick={() => setQuoteToDelete(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3.5 mb-4">
+              <div className="w-11 h-11 rounded-full bg-rose-100 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">¿Eliminar cotización?</h3>
+                <p className="text-xs text-slate-500 font-mono mt-0.5">{quoteToDelete.code}</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 mb-4 text-xs text-slate-700 space-y-1">
+              <div className="font-semibold text-slate-900">{quoteToDelete.client.companyName}</div>
+              <div className="text-slate-600 line-clamp-1">{quoteToDelete.project.projectTitle}</div>
+              <div className="text-slate-400 text-[11px] pt-1.5 border-t border-slate-200 flex justify-between">
+                <span>{quoteToDelete.resources?.length || 0} perfiles</span>
+                <span className="font-bold text-slate-800">
+                  {formatCurrency(calculateQuotationTotals(quoteToDelete).totalAmount, quoteToDelete.currency, quoteToDelete.currencySymbol)}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 mb-6">
+              ¿Estás seguro de que deseas eliminar permanentemente esta cotización? Esta acción no se puede deshacer.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setQuoteToDelete(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = quoteToDelete.id;
+                  setQuoteToDelete(null);
+                  onDeleteQuote(id);
+                }}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Sí, eliminar</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

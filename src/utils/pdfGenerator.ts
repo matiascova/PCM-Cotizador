@@ -1,8 +1,12 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Quotation } from '../types';
+import { toJpeg } from 'html-to-image';
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { Quotation, CompanyProfile } from '../types';
 import { calculateQuotationTotals, formatCurrency } from './calculations';
 import { convertUfToClp } from '../services/bcentralService';
+import { DossierEditorialView } from '../components/DossierEditorialView';
 
 export function generateQuotationPDF(quote: Quotation): jsPDF {
   const doc = new jsPDF({
@@ -439,8 +443,135 @@ export function generateQuotationPDF(quote: Quotation): jsPDF {
   return doc;
 }
 
-export function downloadQuotationPDF(quote: Quotation): void {
+/**
+ * Downloads the quotation in the full executive "Dossier Editorial" format (Bridev style),
+ * capturing all 7 editorial pages in high-resolution A4 format.
+ */
+export async function downloadDossierPDF(
+  quote: Quotation,
+  companyProfile?: CompanyProfile,
+  onProgress?: (status: string, percent: number) => void
+): Promise<void> {
+  let stagingContainer: HTMLDivElement | null = null;
+  let root: ReturnType<typeof createRoot> | null = null;
+
+  try {
+    // 1. Check if there are already dossier pages in the document (e.g. in QuotationPrintView)
+    let pageElements = Array.from(document.querySelectorAll<HTMLElement>('.dossier-page'));
+
+    // 2. If no dossier pages found in current view, mount DossierEditorialView in a hidden staging container
+    if (pageElements.length < 7) {
+      if (onProgress) onProgress('Preparando páginas del Dossier...', 5);
+      stagingContainer = document.createElement('div');
+      stagingContainer.id = 'dossier-pdf-staging-mount';
+      stagingContainer.style.position = 'fixed';
+      stagingContainer.style.left = '-10000px';
+      stagingContainer.style.top = '0';
+      stagingContainer.style.width = '1024px';
+      stagingContainer.style.zIndex = '-9999';
+      stagingContainer.style.backgroundColor = '#020617';
+      document.body.appendChild(stagingContainer);
+
+      root = createRoot(stagingContainer);
+      root.render(
+        React.createElement(DossierEditorialView, {
+          quote,
+          companyProfile,
+          isPrintStaging: true
+        })
+      );
+
+      // Allow DOM to settle and images to begin decoding
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      pageElements = Array.from(stagingContainer.querySelectorAll<HTMLElement>('.dossier-page'));
+    }
+
+    if (pageElements.length === 0) {
+      throw new Error('No se encontraron páginas del dossier para generar el PDF');
+    }
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true
+    });
+
+    const total = pageElements.length;
+    for (let i = 0; i < total; i++) {
+      const page = pageElements[i];
+      if (onProgress) {
+        onProgress(`Capturando página ${i + 1} de ${total}...`, Math.round(((i) / total) * 90));
+      }
+
+      const isDark = page.classList.contains('dossier-page-cover') ||
+                     page.classList.contains('dossier-page-backcover') ||
+                     page.getAttribute('data-theme') === 'dark';
+
+      const imgData = await toJpeg(page, {
+        quality: 0.95,
+        pixelRatio: 2,
+        backgroundColor: isDark ? '#020617' : '#ffffff',
+        skipFonts: true,
+        cacheBust: false,
+        imagePlaceholder: 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"/>'
+      });
+
+      if (i > 0) {
+        pdf.addPage('a4', 'portrait');
+      }
+
+      // Add to PDF covering 210mm x 297mm exactly
+      pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+    }
+
+    if (onProgress) {
+      onProgress('Descargando archivo PDF...', 98);
+    }
+
+    const safeCode = (quote.code || 'COT').replace(/[^a-zA-Z0-9-_]/g, '_');
+    const safeClient = (quote.client?.fantasyName || quote.client?.companyName || 'Cliente').replace(/[^a-zA-Z0-9-_]/g, '_');
+    const filename = `Cotizacion_${safeCode}_Dossier_Editorial_${safeClient}.pdf`;
+    
+    pdf.save(filename);
+
+    if (onProgress) {
+      onProgress('¡Completado!', 100);
+    }
+  } catch (error) {
+    console.error('Error generating Dossier Editorial PDF, falling back to summary PDF:', error);
+    // Fallback gracefully so user always gets a valid PDF
+    const fallbackDoc = generateQuotationPDF(quote);
+    const safeCode = (quote.code || 'COT').replace(/[^a-zA-Z0-9-_]/g, '_');
+    fallbackDoc.save(`Cotizacion_${safeCode}_Resumen.pdf`);
+  } finally {
+    // Cleanup staging mount if it was used
+    if (root && stagingContainer) {
+      try {
+        root.unmount();
+      } catch (e) {
+        // ignore unmount errors
+      }
+      if (stagingContainer.parentNode) {
+        stagingContainer.parentNode.removeChild(stagingContainer);
+      }
+    }
+  }
+}
+
+/**
+ * Main PDF download function used throughout the application.
+ * Generates the full 7-page Dossier Editorial format.
+ */
+export function downloadQuotationPDF(quote: Quotation, companyProfile?: CompanyProfile): void {
+  downloadDossierPDF(quote, companyProfile);
+}
+
+/**
+ * Optional 1-page compact summary technical sheet generator.
+ */
+export function downloadCompactSummaryPDF(quote: Quotation): void {
   const doc = generateQuotationPDF(quote);
-  const filename = `Cotizacion_SAP_${quote.code.replace(/[^a-zA-Z0-9-_]/g, '_')}_${quote.client.companyName.replace(/[^a-zA-Z0-9-_]/g, '_')}.pdf`;
+  const filename = `Cotizacion_SAP_${quote.code.replace(/[^a-zA-Z0-9-_]/g, '_')}_Resumen.pdf`;
   doc.save(filename);
 }

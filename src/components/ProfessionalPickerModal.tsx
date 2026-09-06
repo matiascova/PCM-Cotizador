@@ -16,7 +16,7 @@ import {
 import { Professional, SapModuleCode, SeniorityLevel } from '../types';
 import { formatCurrency } from '../utils/calculations';
 import { getProfessionalRate } from '../data/professionals';
-import { SAP_CATALOG_MODULES } from '../data/sapModules';
+import { SapCatalogModule, getStoredModules } from '../data/sapModules';
 
 interface ProfessionalPickerModalProps {
   isOpen: boolean;
@@ -26,6 +26,7 @@ interface ProfessionalPickerModalProps {
   currencySymbol?: string;
   onSelectProfessional: (professional: Professional) => void;
   alreadyAssignedIds?: string[];
+  modules?: SapCatalogModule[];
 }
 
 export const ProfessionalPickerModal: React.FC<ProfessionalPickerModalProps> = ({
@@ -35,7 +36,8 @@ export const ProfessionalPickerModal: React.FC<ProfessionalPickerModalProps> = (
   activeCurrency,
   currencySymbol = '$',
   onSelectProfessional,
-  alreadyAssignedIds = []
+  alreadyAssignedIds = [],
+  modules = getStoredModules()
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModule, setSelectedModule] = useState<string>('ALL');
@@ -107,7 +109,7 @@ export const ProfessionalPickerModal: React.FC<ProfessionalPickerModalProps> = (
               className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="ALL">Todos los Módulos ({professionals.length})</option>
-              {SAP_CATALOG_MODULES.map(m => (
+              {modules.map(m => (
                 <option key={m.code} value={m.code}>
                   {m.code} ({m.shortName})
                 </option>

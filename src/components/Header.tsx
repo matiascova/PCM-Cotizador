@@ -48,6 +48,8 @@ export const Header: React.FC<HeaderProps> = ({
         return { subtitle: 'Client Directory', title: 'Empresas & Cuentas Corporativas' };
       case 'resources':
         return { subtitle: 'Resource Catalog', title: 'Matriz de Perfiles y Tarifas SAP' };
+      case 'procurement':
+        return { subtitle: 'SAP MM Procurement', title: 'Compras, SOLPEDs (ME51N) & Órdenes de Compra (ME21N)' };
       case 'builder':
       default:
         return { subtitle: 'Proposal Builder', title: 'Sistema de Cotizaciones & Staffing SAP' };
