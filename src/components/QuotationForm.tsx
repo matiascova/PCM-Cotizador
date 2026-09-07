@@ -51,7 +51,7 @@ import {
   ClientMasterItem,
   ResourceStaffingType
 } from '../types';
-import { syncSolpedsForQuotation } from '../services/procurementService';
+import { syncSolpedsForQuotation, alignQuotationResourceSolpeds } from '../services/procurementService';
 import { 
   SAP_CATALOG_MODULES, 
   SapCatalogModule,
@@ -318,9 +318,9 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
     const currentCurr = initialQuote?.currency || 'USD';
     const hasMismatched = raw.some(r => isResourceRateMismatched(r.hourlyRate, currentCurr));
     if (hasMismatched) {
-      return rescueResourceRatesForCurrency(raw, currentCurr, undefined, propProfessionals || getStoredProfessionals());
+      return alignQuotationResourceSolpeds(rescueResourceRatesForCurrency(raw, currentCurr, undefined, propProfessionals || getStoredProfessionals()));
     }
-    return raw;
+    return alignQuotationResourceSolpeds(raw);
   });
 
   // Milestones
@@ -512,7 +512,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       professionalName: prof.name
     };
 
-    setResources(prev => [...prev, newRes]);
+    setResources(prev => alignQuotationResourceSolpeds([...prev, newRes]));
   };
 
   // Assign or reassign a catalog professional to an existing resource row
@@ -567,22 +567,25 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       responsibilities: catalogMod.defaultResponsibilities || 'Consultoría y ejecución especializada.'
     };
 
-    setResources([...resources, newRes]);
+    setResources(prev => alignQuotationResourceSolpeds([...prev, newRes]));
   };
 
   const handleUpdateResource = (id: string, updates: Partial<SapResourceItem>) => {
-    setResources(prev => prev.map(r => {
-      if (r.id !== id) return r;
-      const updated = { ...r, ...updates };
-      const hours = Number(updated.hours) || 0;
-      const rate = Number(updated.hourlyRate) || 0;
-      updated.subtotal = hours * rate;
-      return updated;
-    }));
+    setResources(prev => {
+      const updatedList = prev.map(r => {
+        if (r.id !== id) return r;
+        const updated = { ...r, ...updates };
+        const hours = Number(updated.hours) || 0;
+        const rate = Number(updated.hourlyRate) || 0;
+        updated.subtotal = hours * rate;
+        return updated;
+      });
+      return alignQuotationResourceSolpeds(updatedList);
+    });
   };
 
   const handleDeleteResource = (id: string) => {
-    setResources(prev => prev.filter(r => r.id !== id));
+    setResources(prev => alignQuotationResourceSolpeds(prev.filter(r => r.id !== id)));
   };
 
   // Milestones handlers
@@ -2497,12 +2500,12 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                             {res.solpedNumber ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-100 text-purple-800 border border-purple-300 text-[11px] font-bold font-mono">
                                 <Check className="w-3.5 h-3.5 text-purple-700" />
-                                <span>SOLPED #{res.solpedNumber}</span>
+                                <span>SOLPED #{res.solpedNumber} (Pos. {res.solpedPosition || 10})</span>
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-purple-700 border border-purple-300 text-[11px] font-bold shadow-2xs">
                                 <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                                <span>Creará SOLPED SAP MM (ME51N)</span>
+                                <span>Creará SOLPED SAP (Pos. {res.solpedPosition || 10})</span>
                               </span>
                             )}
                           </div>

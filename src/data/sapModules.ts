@@ -30,6 +30,18 @@ export function getStoredModules(): SapCatalogModule[] {
     if (data) {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed) && parsed.length > 0) {
+        // Ensure standard modules like APP_AI are incorporated if not present in existing stored array
+        const existingCodes = new Set(parsed.map((m: SapCatalogModule) => m.code));
+        let changed = false;
+        SAP_CATALOG_MODULES.forEach(catMod => {
+          if (!existingCodes.has(catMod.code)) {
+            parsed.push(catMod);
+            changed = true;
+          }
+        });
+        if (changed) {
+          localStorage.setItem(MODULES_STORAGE_KEY, JSON.stringify(parsed));
+        }
         return parsed;
       }
     }
@@ -235,6 +247,29 @@ export const SAP_CATALOG_MODULES: SapCatalogModule[] = [
       'Semi-Senior': 70,
       'Senior': 95,
       'Lead / Arquitecto': 135
+    }
+  },
+  {
+    code: 'APP_AI',
+    name: 'Arquitecto AI',
+    shortName: 'AI',
+    category: 'Consultoría',
+    description: 'Perfil especializado en Arquitecto AI, soluciones de inteligencia artificial aplicada, LLMs e integración empresarial.',
+    defaultResponsibilities: 'Diseño de arquitectura de IA, integración de modelos generativos, gobierno de datos, orquestación de prompts y agentes.',
+    typicalDeliverables: ['Arquitectura de Solución IA', 'Diseño de Pipelines y Modelos', 'Guía de Pruebas y Evaluación'],
+    benchmarkRatesUSD: {
+      'Junior': 42,
+      'Semi-Senior': 55,
+      'Senior': 80,
+      'Lead / Arquitecto': 110
+    },
+    customRates: {
+      CLP: {
+        'Junior': 40000,
+        'Semi-Senior': 54000,
+        'Senior': 78000,
+        'Lead / Arquitecto': 108000
+      }
     }
   }
 ];

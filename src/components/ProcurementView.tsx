@@ -3,6 +3,7 @@ import {
   ShoppingBag, 
   FileText, 
   CheckCircle2, 
+  Check,
   Clock, 
   AlertCircle, 
   ArrowRight, 
@@ -37,7 +38,10 @@ import {
   ArrowDown,
   Table as TableIcon,
   PlusCircle,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Coins,
+  RefreshCw,
+  Zap
 } from 'lucide-react';
 import { 
   Quotation, 
@@ -45,7 +49,9 @@ import {
   ServicePurchaseOrder, 
   ServiceEntrySheet,
   SolpedStatus,
-  PurchaseOrderStatus
+  PurchaseOrderStatus,
+  SupportedCurrency,
+  SeniorityLevel
 } from '../types';
 import { 
   getStoredSolpeds, 
@@ -67,12 +73,92 @@ import {
   deleteSolpedPosition
 } from '../services/procurementService';
 import { formatCurrency } from '../utils/calculations';
+import { CURRENCIES, convertCurrency, getBenchmarkRate } from '../utils/currencies';
+import { getCachedBancoCentralData } from '../services/bcentralService';
+import { getStoredModules, SapCatalogModule, getModuleBenchmarkRate } from '../data/sapModules';
+
+export interface SapSpecialtyPreset {
+  id: string;
+  label: string;
+  code: string;
+  moduleName: string;
+  category: string;
+  description: string;
+}
+
+export const SAP_SPECIALTY_PRESETS: SapSpecialtyPreset[] = [
+  // ⭐ Principales y más requeridas
+  { id: 'abaper', label: 'ABAPER', code: 'DEV_ABAP', moduleName: 'Desarrollador ABAP', category: 'Técnico', description: 'Desarrollo ABAP Cloud, RAP, RICEFW, CDS Views y Fiori' },
+  { id: 'mm', label: 'Consultor MM', code: 'SAP_MM', moduleName: 'SAP MM', category: 'Funcional', description: 'Gestión de Materiales, Compras, Aprovisionamiento y Stock' },
+  { id: 'hcm', label: 'Consultor HCM', code: 'SAP_HCM', moduleName: 'SAP HCM', category: 'Funcional', description: 'Gestión de Capital Humano, Nómina / Planilla y Tiempos' },
+  { id: 'fico', label: 'Consultor FICO', code: 'SAP_FICO', moduleName: 'SAP FICO', category: 'Funcional', description: 'Finanzas (FI), Contabilidad General y Controlling (CO)' },
+  { id: 'basis', label: 'Consultor Basis', code: 'SAP_BASIS', moduleName: 'SAP Basis', category: 'Técnico', description: 'Administración Técnica de Sistemas SAP, HANA y NetWeaver' },
+  { id: 'sd', label: 'Consultor SD', code: 'SAP_SD', moduleName: 'SAP SD', category: 'Funcional', description: 'Ventas, Facturación y Distribución Comercial' },
+  { id: 'pm', label: 'Consultor PM', code: 'SAP_PM', moduleName: 'SAP PM', category: 'Funcional', description: 'Mantenimiento de Planta y Gestión de Activos' },
+  { id: 'qm', label: 'Consultor QM', code: 'SAP_QM', moduleName: 'SAP QM', category: 'Funcional', description: 'Gestión de Calidad, Inspecciones y Certificados' },
+  { id: 'le', label: 'Consultor LE', code: 'SAP_LE', moduleName: 'SAP LE', category: 'Funcional', description: 'Logística de Ejecución, Expedición y Almacenes (WM)' },
+  { id: 'seguridad', label: 'Consultor Seguridad SAP', code: 'SAP_SECURITY', moduleName: 'Seguridad SAP', category: 'Técnico', description: 'Roles y Autorizaciones (PFCG), Auditoría y Matriz SoD' },
+  { id: 'pp', label: 'Consultor PP', code: 'SAP_PP', moduleName: 'SAP PP', category: 'Funcional', description: 'Planificación y Control de la Producción' },
+  { id: 'btp', label: 'Consultor SAP BTP', code: 'SAP_BTP', moduleName: 'SAP BTP', category: 'Técnico', description: 'Business Technology Platform e Integración Cloud' },
+  { id: 'arquitecto', label: 'Arquitecto SAP', code: 'SAP_ARCH', moduleName: 'Arquitectura SAP', category: 'Gestión', description: 'Arquitectura de Soluciones Integrales SAP S/4HANA' },
+  { id: 'pmo', label: 'Project Manager SAP', code: 'SAP_PMO_LEAD', moduleName: 'PMO SAP', category: 'Gestión', description: 'Dirección de Proyectos SAP y Metodología SAP Activate' },
+];
 
 interface ProcurementViewProps {
   quotations: Quotation[];
   onSelectQuotation?: (quote: Quotation) => void;
   onOpenNewQuotation?: () => void;
 }
+
+// Helper to match a position with a module in company catalog (Módulos SAP y Perfiles)
+export const getCatalogModuleForPosition = (
+  pos: ServicePurchaseRequisition | undefined,
+  modules: SapCatalogModule[]
+): SapCatalogModule | undefined => {
+  if (!pos) return undefined;
+  
+  // 1. By module code
+  if (pos.moduleCode) {
+    const found = modules.find(m => m.code.toUpperCase() === pos.moduleCode.toUpperCase());
+    if (found) return found;
+  }
+  
+  // 2. By role title
+  const title = (pos.roleTitle || '').trim().toLowerCase();
+  if (title) {
+    const found = modules.find(m => {
+      const name = m.name.toLowerCase();
+      const shortName = m.shortName.toLowerCase();
+      const code = m.code.toLowerCase();
+      return title === name || title === shortName || title === code ||
+             title.includes(name) || name.includes(title) ||
+             title.includes(shortName) || title.includes(code);
+    });
+    if (found) return found;
+
+    // Preset lookup
+    const preset = SAP_SPECIALTY_PRESETS.find(p => 
+      p.label.toLowerCase() === title || title.includes(p.label.toLowerCase())
+    );
+    if (preset) {
+      const presetMod = modules.find(m => m.code.toUpperCase() === preset.code.toUpperCase());
+      if (presetMod) return presetMod;
+    }
+  }
+
+  return modules.find(m => m.code === 'DEV_ABAP') || modules[0];
+};
+
+// Helper to determine seniority of position
+export const getSeniorityForPosition = (pos: ServicePurchaseRequisition | undefined): SeniorityLevel => {
+  if (!pos) return 'Senior';
+  if (pos.seniority) return pos.seniority;
+  const title = (pos.roleTitle || '').toLowerCase();
+  if (title.includes('lead') || title.includes('arquitecto') || title.includes('principal')) return 'Lead / Arquitecto';
+  if (title.includes('semi-senior') || title.includes('semi senior') || title.includes('ssr')) return 'Semi-Senior';
+  if (title.includes('junior') || title.includes('jr')) return 'Junior';
+  return 'Senior';
+};
 
 export const ProcurementView: React.FC<ProcurementViewProps> = ({
   quotations,
@@ -104,6 +190,9 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
   const [editSolpedPep, setEditSolpedPep] = useState('');
   const [editSolpedCeco, setEditSolpedCeco] = useState('');
   const [editSolpedNotes, setEditSolpedNotes] = useState('');
+  const [currencyChangeNotice, setCurrencyChangeNotice] = useState<string | null>(null);
+  const [standardRateNotice, setStandardRateNotice] = useState<string | null>(null);
+  const [companyCatalogModules, setCompanyCatalogModules] = useState<SapCatalogModule[]>(() => getStoredModules());
 
   // ALV controls
   const [showAlvTotals, setShowAlvTotals] = useState<boolean>(true);
@@ -171,6 +260,8 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
   // Open Edit SOLPED modal (ME52N) with ALV Positions
   const handleOpenEditSolped = (solped: ServicePurchaseRequisition) => {
     if (solped.status === 'converted_to_po' || solped.convertedPoId) return;
+    // Always refresh company modules from stored modules so newly created profiles (e.g. Arquitecto AI) appear immediately
+    setCompanyCatalogModules(getStoredModules());
     setEditingSolped(solped);
 
     // Retrieve all positions for this SOLPED
@@ -225,6 +316,123 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
       }
       return p;
     }));
+  };
+
+  // Select an SAP specialty preset for the active position
+  const handleSelectSpecialtyForActivePos = (
+    specialtyTitle: string,
+    optModuleCode?: string,
+    optModuleName?: string
+  ) => {
+    let mCode = optModuleCode;
+    let mName = optModuleName;
+    const lower = specialtyTitle.toLowerCase();
+    if (!mCode) {
+      // First check dynamic company catalog modules
+      const matchModule = companyCatalogModules.find(
+        m => m.name.toLowerCase() === lower || 
+             m.shortName.toLowerCase() === lower ||
+             m.code.toLowerCase() === lower ||
+             lower.includes(m.name.toLowerCase()) ||
+             lower.includes(m.code.toLowerCase())
+      );
+      if (matchModule) {
+        mCode = matchModule.code;
+        mName = matchModule.name;
+      } else {
+        const matchPreset = SAP_SPECIALTY_PRESETS.find(
+          p => p.label.toLowerCase() === lower || lower.includes(p.label.toLowerCase())
+        );
+        if (matchPreset) {
+          mCode = matchPreset.code;
+          mName = matchPreset.moduleName;
+        }
+      }
+    }
+
+    setEditingSolpedPositions(prev => prev.map(p => {
+      if (p.id === selectedPosId) {
+        return {
+          ...p,
+          roleTitle: specialtyTitle,
+          moduleCode: mCode || p.moduleCode,
+          moduleName: mName || p.moduleName
+        };
+      }
+      return p;
+    }));
+    setEditSolpedRoleTitle(specialtyTitle);
+  };
+
+  // Convert currency of SOLPED (only allowed if no PO has been created yet)
+  const handleChangeSolpedCurrency = (newCurrency: SupportedCurrency) => {
+    if (!editingSolped) return;
+    const currentCurrency = (editingSolpedPositions[0]?.currency || editingSolped.currency || 'USD') as SupportedCurrency;
+    if (currentCurrency === newCurrency) return;
+
+    const targetConfig = CURRENCIES[newCurrency] || CURRENCIES.USD;
+    const targetSymbol = targetConfig.symbol;
+
+    const data = getCachedBancoCentralData();
+    const ufRate = data?.indicators?.uf?.value || 40879.04;
+    const dolarRate = data?.indicators?.dolar?.value || 933.47;
+    const mxnRate = CURRENCIES.MXN?.approxRateToUSD || 18.5;
+
+    // Helper for accurate rate conversion
+    const convertRate = (rate: number, from: SupportedCurrency, to: SupportedCurrency): number => {
+      if (from === to) return rate;
+      let inUSD = rate;
+      if (from === 'CLP') inUSD = rate / dolarRate;
+      else if (from === 'UF') inUSD = (rate * ufRate) / dolarRate;
+      else if (from === 'MXN') inUSD = rate / mxnRate;
+
+      if (to === 'USD') return Math.round(inUSD * 100) / 100;
+      if (to === 'UF') return Math.round(((inUSD * dolarRate) / ufRate) * 100) / 100;
+      if (to === 'CLP') return Math.round(inUSD * dolarRate);
+      if (to === 'MXN') return Math.round(inUSD * mxnRate);
+      return Math.round(inUSD * 100) / 100;
+    };
+
+    const updatedPositions = editingSolpedPositions.map(pos => {
+      const posFromCurr = (pos.currency || currentCurrency) as SupportedCurrency;
+      const convertedRate = convertRate(pos.hourlyRate || 0, posFromCurr, newCurrency);
+      const hours = Number(pos.hours) || 0;
+      const newTotal = hours * convertedRate;
+
+      return {
+        ...pos,
+        currency: newCurrency,
+        currencySymbol: targetSymbol,
+        hourlyRate: convertedRate,
+        totalAmount: newTotal
+      };
+    });
+
+    setEditingSolpedPositions(updatedPositions);
+
+    // Update active position edit inputs if needed
+    const activeUpdated = updatedPositions.find(p => p.id === selectedPosId) || updatedPositions[0];
+    if (activeUpdated) {
+      setEditSolpedRate(activeUpdated.hourlyRate);
+    }
+
+    // Also update the editingSolped header object
+    setEditingSolped(prev => {
+      if (!prev) return null;
+      const convertedHeaderRate = convertRate(prev.hourlyRate || 0, (prev.currency || currentCurrency) as SupportedCurrency, newCurrency);
+      const newNetTotal = updatedPositions.reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+      return {
+        ...prev,
+        currency: newCurrency,
+        currencySymbol: targetSymbol,
+        hourlyRate: convertedHeaderRate,
+        totalAmount: newNetTotal
+      };
+    });
+
+    setCurrencyChangeNotice(
+      `Moneda de la SOLPED cambiada de ${currentCurrency} a ${newCurrency} (${targetSymbol}). Las tarifas e importes de las ${updatedPositions.length} posición(es) fueron recalculadas según el tipo de cambio oficial del Banco Central.`
+    );
   };
 
   // Insert new position in ME52N ALV
@@ -1480,25 +1688,65 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
             </div>
 
             <form onSubmit={handleConfirmConvert} className="space-y-4 text-xs">
-              <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3.5 space-y-1.5">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Servicio Subcontratado:</span>
-                  <span className="font-bold text-slate-900">{solpedToConvert.roleTitle}</span>
-                </div>
+              <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3.5 space-y-2.5">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Cotización & Proyecto:</span>
                   <span className="font-medium text-slate-800">{solpedToConvert.quotationCode} • {solpedToConvert.clientCompanyName}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Imputación PEP:</span>
-                  <span className="font-mono text-purple-900 font-bold">{solpedToConvert.pepElement}</span>
-                </div>
-                <div className="flex justify-between pt-1 border-t border-purple-200/60 font-bold">
-                  <span>Total Contratado:</span>
-                  <span className="text-purple-900 font-mono text-sm">
-                    {solpedToConvert.hours} hrs @ {formatCurrency(solpedToConvert.totalAmount, solpedToConvert.currency, solpedToConvert.currencySymbol)}
-                  </span>
-                </div>
+
+                {(() => {
+                  const convertPositions = getSolpedPositions(solpedToConvert.solpedNumber);
+                  const positionsList = convertPositions.length > 0 ? convertPositions : [solpedToConvert];
+                  const totalHrs = positionsList.reduce((sum, p) => sum + (Number(p.hours) || 0), 0);
+                  const totalNet = positionsList.reduce((sum, p) => sum + (Number(p.totalAmount) || 0), 0);
+
+                  return (
+                    <>
+                      <div className="pt-2 border-t border-purple-200/60">
+                        <span className="text-[11px] font-bold text-purple-950 block mb-1.5">
+                          Posiciones de la SOLPED a contratar ({positionsList.length} {positionsList.length === 1 ? 'especialista' : 'especialistas'}):
+                        </span>
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                          {positionsList.map(pos => (
+                            <div key={pos.id} className="flex items-center justify-between bg-white/90 p-2 rounded-lg border border-purple-200 text-[11px]">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded text-[10px]">
+                                  Pos. {pos.positionNumber}
+                                </span>
+                                <div>
+                                  <span className="font-bold text-slate-800">{pos.roleTitle}</span>
+                                  <span className="text-[10px] text-slate-500 ml-1 font-mono">({pos.pepElement})</span>
+                                </div>
+                              </div>
+                              <div className="text-right font-mono">
+                                <span className="font-bold text-slate-700">{pos.hours} hrs</span>
+                                <span className="text-purple-900 font-bold ml-2">
+                                  {formatCurrency(pos.totalAmount, pos.currency, pos.currencySymbol)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between pt-2 border-t border-purple-200/60 font-bold">
+                        <span className="text-purple-950">Total Contratado de la Orden:</span>
+                        <span className="text-purple-900 font-mono text-sm">
+                          {totalHrs} hrs • {formatCurrency(totalNet, solpedToConvert.currency, solpedToConvert.currencySymbol)}
+                        </span>
+                      </div>
+
+                      <div className="bg-purple-100/80 rounded-lg p-2 text-[11px] text-purple-900 flex items-center gap-1.5 font-medium">
+                        <Check className="w-3.5 h-3.5 text-purple-700 shrink-0" />
+                        <span>
+                          {positionsList.length > 1 
+                            ? `Se emitirá 1 única Orden de Compra oficial consolidada para las ${positionsList.length} posiciones de esta SOLPED.`
+                            : 'Se emitirá 1 Orden de Compra oficial para esta SOLPED.'}
+                        </span>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2038,20 +2286,44 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  <tr>
-                    <td className="p-3 font-mono font-bold text-slate-700">10</td>
-                    <td className="p-3">
-                      <span className="font-bold text-slate-900 block">{poForPrint.roleTitle}</span>
-                      <span className="text-[11px] text-slate-500">Servicio de Consultoría Especializada SAP {poForPrint.moduleCode}</span>
-                    </td>
-                    <td className="p-3 text-right font-bold text-slate-900">{poForPrint.hoursContracted} HUR</td>
-                    <td className="p-3 text-right font-mono text-slate-700">
-                      {formatCurrency(poForPrint.hourlyRate, poForPrint.currency, poForPrint.currencySymbol)}
-                    </td>
-                    <td className="p-3 text-right font-mono font-bold text-slate-900">
-                      {formatCurrency(poForPrint.netAmount, poForPrint.currency, poForPrint.currencySymbol)}
-                    </td>
-                  </tr>
+                  {poForPrint.items && poForPrint.items.length > 0 ? (
+                    poForPrint.items.map(item => (
+                      <tr key={item.positionNumber}>
+                        <td className="p-3 font-mono font-bold text-slate-700">{item.positionNumber}</td>
+                        <td className="p-3">
+                          <span className="font-bold text-slate-900 block">{item.roleTitle}</span>
+                          <span className="text-[11px] text-slate-500">
+                            Servicio de Consultoría Especializada SAP {item.moduleCode || ''} {item.seniority ? `• ${item.seniority}` : ''}
+                          </span>
+                          {item.pepElement && (
+                            <span className="font-mono text-[10px] text-slate-400 block mt-0.5">PEP: {item.pepElement}</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-right font-bold text-slate-900">{item.hours} HUR</td>
+                        <td className="p-3 text-right font-mono text-slate-700">
+                          {formatCurrency(item.hourlyRate, poForPrint.currency, poForPrint.currencySymbol)}
+                        </td>
+                        <td className="p-3 text-right font-mono font-bold text-slate-900">
+                          {formatCurrency(item.totalAmount, poForPrint.currency, poForPrint.currencySymbol)}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="p-3 font-mono font-bold text-slate-700">10</td>
+                      <td className="p-3">
+                        <span className="font-bold text-slate-900 block">{poForPrint.roleTitle}</span>
+                        <span className="text-[11px] text-slate-500">Servicio de Consultoría Especializada SAP {poForPrint.moduleCode}</span>
+                      </td>
+                      <td className="p-3 text-right font-bold text-slate-900">{poForPrint.hoursContracted} HUR</td>
+                      <td className="p-3 text-right font-mono text-slate-700">
+                        {formatCurrency(poForPrint.hourlyRate, poForPrint.currency, poForPrint.currencySymbol)}
+                      </td>
+                      <td className="p-3 text-right font-mono font-bold text-slate-900">
+                        {formatCurrency(poForPrint.netAmount, poForPrint.currency, poForPrint.currencySymbol)}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
 
@@ -2124,6 +2396,60 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
         const isActivePosLocked = Boolean(activePos && (activePos.convertedPoId || activePos.status === 'converted_to_po'));
         const modalTotalHours = editingSolpedPositions.reduce((acc, p) => acc + (p.hours || 0), 0);
         const modalTotalNet = editingSolpedPositions.reduce((acc, p) => acc + (p.totalAmount || 0), 0);
+        const currentSolpedCurrency = (editingSolpedPositions[0]?.currency || editingSolped.currency || 'USD') as SupportedCurrency;
+        const currentSolpedSymbol = editingSolpedPositions[0]?.currencySymbol || editingSolped.currencySymbol || (CURRENCIES[currentSolpedCurrency]?.symbol || '$');
+        const hasPoForThisSolped = Boolean(
+          editingSolped.convertedPoId ||
+          editingSolped.status === 'converted_to_po' ||
+          editingSolpedPositions.some(p => Boolean(p.convertedPoId || p.status === 'converted_to_po')) ||
+          purchaseOrders.some(po => po.solpedNumber === editingSolped.solpedNumber || po.solpedId === editingSolped.id)
+        );
+
+        // Calculate standard benchmark rates from "Módulos SAP y Perfiles" for the active position
+        const activeModule = getCatalogModuleForPosition(activePos, companyCatalogModules);
+        const activeSeniority = getSeniorityForPosition(activePos);
+        const activeStandardRate = activeModule
+          ? getModuleBenchmarkRate(activeModule, activeSeniority, currentSolpedCurrency)
+          : getBenchmarkRate(activePos?.moduleCode || 'SAP_MM', activeSeniority, currentSolpedCurrency);
+
+        const benchmarkRatesBySeniority: Record<SeniorityLevel, number> = activeModule ? {
+          'Senior': getModuleBenchmarkRate(activeModule, 'Senior', currentSolpedCurrency),
+          'Lead / Arquitecto': getModuleBenchmarkRate(activeModule, 'Lead / Arquitecto', currentSolpedCurrency),
+          'Semi-Senior': getModuleBenchmarkRate(activeModule, 'Semi-Senior', currentSolpedCurrency),
+          'Junior': getModuleBenchmarkRate(activeModule, 'Junior', currentSolpedCurrency),
+        } : {
+          'Senior': getBenchmarkRate(activePos?.moduleCode || 'SAP_MM', 'Senior', currentSolpedCurrency),
+          'Lead / Arquitecto': getBenchmarkRate(activePos?.moduleCode || 'SAP_MM', 'Lead / Arquitecto', currentSolpedCurrency),
+          'Semi-Senior': getBenchmarkRate(activePos?.moduleCode || 'SAP_MM', 'Semi-Senior', currentSolpedCurrency),
+          'Junior': getBenchmarkRate(activePos?.moduleCode || 'SAP_MM', 'Junior', currentSolpedCurrency),
+        };
+
+        const handleApplyStandardRate = (rate: number, seniority?: SeniorityLevel) => {
+          if (isActivePosLocked || !activePos) return;
+          setEditingSolpedPositions(prev => prev.map(p => {
+            if (p.id === activePos.id) {
+              const updated = {
+                ...p,
+                hourlyRate: rate,
+                totalAmount: (p.hours || 0) * rate
+              };
+              if (seniority) {
+                updated.seniority = seniority;
+              }
+              if (activeModule) {
+                updated.moduleCode = activeModule.code;
+                updated.moduleName = activeModule.name;
+              }
+              return updated;
+            }
+            return p;
+          }));
+          setEditSolpedRate(rate);
+          setStandardRateNotice(
+            `Tarifa estándar aplicada: ${formatCurrency(rate, currentSolpedCurrency, currentSolpedSymbol)}/hr (${activeModule?.shortName || activeModule?.name || 'Módulo'} • ${seniority || activeSeniority})`
+          );
+          setTimeout(() => setStandardRateNotice(null), 3500);
+        };
 
         return (
           <div 
@@ -2162,34 +2488,34 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
 
               {/* Scrollable Content Body */}
               <div className="space-y-4 text-xs overflow-y-auto pr-1 flex-1">
-                {/* ALV Toolbar Controls */}
-                <div className="bg-slate-100/90 border border-slate-200 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <div className="flex items-center gap-2">
-                    <TableIcon className="w-4 h-4 text-blue-700" />
-                    <span className="font-bold text-slate-800 text-xs">Listado ALV de Posiciones (ME52N)</span>
-                    <span className="text-[11px] text-slate-500 hidden sm:inline">
-                      • Haz clic sobre cualquier fila para editar sus detalles
+                {/* ALV Toolbar Controls - Compact Single-Line Layout */}
+                <div className="bg-slate-100/90 border border-slate-200 rounded-xl px-3 py-1.5 flex items-center justify-between gap-2.5 text-xs flex-nowrap overflow-x-auto">
+                  {/* Left: ALV Title & Counter */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <TableIcon className="w-3.5 h-3.5 text-blue-700" />
+                    <span className="font-bold text-slate-800 text-xs whitespace-nowrap">Posiciones ALV</span>
+                    <span className="text-[10px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded-full font-mono">
+                      {editingSolpedPositions.length}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    {/* Insertar Nueva Posición */}
+                  {/* Actions: Insert, Delete, Export */}
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
                       onClick={handleInsertPositionInModal}
-                      className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                      className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs whitespace-nowrap"
                       title="Agregar una nueva línea de posición a la SOLPED (incremento de 10 en 10)"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>+ Insertar Posición</span>
+                      <span>+ Insertar</span>
                     </button>
 
-                    {/* Eliminar Posición Seleccionada */}
                     <button
                       type="button"
                       disabled={editingSolpedPositions.length <= 1 || isActivePosLocked}
                       onClick={() => activePos && handleDeletePositionInModal(activePos.id)}
-                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-colors flex items-center gap-1 shadow-2xs ${
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors flex items-center gap-1 shadow-2xs whitespace-nowrap ${
                         editingSolpedPositions.length <= 1 || isActivePosLocked
                           ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
                           : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 cursor-pointer'
@@ -2203,21 +2529,66 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                       }
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      <span>- Borrar Posición</span>
+                      <span>Borrar</span>
                     </button>
 
-                    {/* Exportar ALV a CSV */}
                     <button
                       type="button"
                       onClick={() => handleExportCsv(editingSolpedPositions, `posiciones_solped_${editingSolped.solpedNumber}.csv`)}
-                      className="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                      className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs whitespace-nowrap"
                       title="Descargar listado ALV a CSV"
                     >
                       <Download className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Exportar ALV (.csv)</span>
+                      <span>CSV</span>
                     </button>
                   </div>
+
+                  {/* Right: Inline Compact Currency Selector */}
+                  <div className="flex items-center gap-1.5 shrink-0 pl-1 border-l border-slate-300">
+                    <Coins className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span className="font-bold text-slate-600 text-xs whitespace-nowrap">Moneda:</span>
+                    {hasPoForThisSolped ? (
+                      <div 
+                        className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-600 rounded-md text-xs font-bold cursor-not-allowed"
+                        title="La moneda no puede modificarse porque esta SOLPED ya cuenta con Orden de Compra emitida."
+                      >
+                        <Lock className="w-3 h-3 text-amber-600 shrink-0" />
+                        <span>{currentSolpedCurrency}</span>
+                        <span className="text-[9px] text-amber-800 bg-amber-100 px-1 rounded font-bold">OC</span>
+                      </div>
+                    ) : (
+                      <select
+                        id="select-solped-currency"
+                        value={currentSolpedCurrency}
+                        onChange={(e) => handleChangeSolpedCurrency(e.target.value as SupportedCurrency)}
+                        className="bg-white hover:bg-blue-50/50 text-blue-900 border border-slate-300 font-bold rounded-md px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer transition-colors shadow-2xs"
+                        title="Cambiar la moneda de esta SOLPED (convierte tarifas e importes automáticamente al tipo de cambio oficial)"
+                      >
+                        <option value="UF">🇨🇱 UF</option>
+                        <option value="USD">🇺🇸 USD ($)</option>
+                        <option value="CLP">🇨🇱 CLP ($)</option>
+                        <option value="MXN">🇲🇽 MXN ($)</option>
+                      </select>
+                    )}
+                  </div>
                 </div>
+
+                {/* Banner de Notificación de Conversión de Moneda */}
+                {currencyChangeNotice && (
+                  <div className="flex items-center justify-between gap-2 px-3.5 py-2 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs shadow-2xs animate-in fade-in">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="font-medium">{currencyChangeNotice}</span>
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={() => setCurrencyChangeNotice(null)}
+                      className="text-emerald-700 hover:text-emerald-900 p-0.5 rounded cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
 
                 {/* ALV Table Grid */}
                 <div className="overflow-x-auto border border-slate-200 rounded-xl">
@@ -2350,7 +2721,7 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                         </td>
                         <td className="p-2.5" />
                         <td className="p-2.5 text-right font-mono text-xs text-blue-900">
-                          {formatCurrency(modalTotalNet, editingSolped.currency, editingSolped.currencySymbol)}
+                          {formatCurrency(modalTotalNet, currentSolpedCurrency, currentSolpedSymbol)}
                         </td>
                         <td colSpan={3} />
                       </tr>
@@ -2406,19 +2777,121 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="font-bold text-slate-700 block mb-1">Servicio / Perfil de Consultoría</label>
-                        <input
-                          type="text"
-                          required
-                          disabled={isActivePosLocked}
-                          value={activePos.roleTitle || ''}
-                          onChange={e => handleUpdateActivePosition('roleTitle', e.target.value)}
-                          className={`w-full px-3 py-2 border rounded-xl font-medium focus:outline-none transition-colors ${
-                            isActivePosLocked 
-                              ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed' 
-                              : 'bg-white text-slate-800 border-slate-300 focus:ring-1 focus:ring-blue-500'
-                          }`}
-                        />
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <label className="font-bold text-slate-700 flex items-center gap-1.5 text-xs">
+                            <span>Servicio / Perfil de Consultoría</span>
+                          </label>
+                          
+                          {/* Selector de Especialidades y Perfiles de la Empresa (Dinámico) */}
+                          <div className="flex items-center gap-1">
+                            <select
+                              id="select-sap-specialty-me52n"
+                              disabled={isActivePosLocked}
+                              value=""
+                              onChange={e => {
+                                const val = e.target.value;
+                                if (!val) return;
+                                const mod = companyCatalogModules.find(m => m.name === val || m.code === val);
+                                const preset = SAP_SPECIALTY_PRESETS.find(p => p.label === val);
+                                handleSelectSpecialtyForActivePos(
+                                  mod ? mod.name : (preset ? preset.label : val),
+                                  mod ? mod.code : preset?.code,
+                                  mod ? mod.name : preset?.moduleName
+                                );
+                                e.target.value = '';
+                              }}
+                              className="text-[11px] font-bold py-1 px-2.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-300 hover:bg-blue-100 hover:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer transition-all shadow-2xs max-w-[230px] truncate"
+                              title="Selecciona un perfil o especialidad desde el catálogo maestro de la empresa"
+                            >
+                              <option value="">▼ Seleccionar Especialidad / Perfil...</option>
+                              
+                              {/* Agrupación dinámica por categoría de los perfiles de la empresa */}
+                              {Array.from(new Set(companyCatalogModules.map(m => m.category || 'Consultoría'))).map(categoryName => {
+                                const modulesInCategory = companyCatalogModules.filter(m => (m.category || 'Consultoría') === categoryName);
+                                return (
+                                  <optgroup key={categoryName} label={categoryName}>
+                                    {modulesInCategory.map(mod => (
+                                      <option key={mod.code} value={mod.name}>
+                                        {mod.name} ({mod.code})
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                );
+                              })}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Input de texto libre con soporte de autocompletado y limpieza */}
+                        <div className="relative">
+                          <input
+                            type="text"
+                            required
+                            list="sap-specialties-datalist"
+                            placeholder="Ej: Arquitecto AI, ABAPER, Consultor MM o escribe texto libre..."
+                            disabled={isActivePosLocked}
+                            value={activePos.roleTitle || ''}
+                            onChange={e => handleUpdateActivePosition('roleTitle', e.target.value)}
+                            className={`w-full px-3 py-2 pr-8 border rounded-xl font-medium focus:outline-none transition-colors ${
+                              isActivePosLocked 
+                                ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed' 
+                                : 'bg-white text-slate-800 border-slate-300 focus:ring-1 focus:ring-blue-500'
+                            }`}
+                          />
+                          {activePos.roleTitle && !isActivePosLocked && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateActivePosition('roleTitle', '')}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-100 cursor-pointer"
+                              title="Limpiar campo para escribir texto libre"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Datalist dinámico alimentado por el catálogo maestro de la empresa */}
+                        <datalist id="sap-specialties-datalist">
+                          {companyCatalogModules.map(mod => (
+                            <option key={mod.code} value={mod.name}>
+                              [{mod.code}] {mod.name} - {mod.category}
+                            </option>
+                          ))}
+                          {SAP_SPECIALTY_PRESETS.map(p => (
+                            <option key={`preset-${p.id}`} value={p.label}>
+                              {p.moduleName} ({p.description})
+                            </option>
+                          ))}
+                        </datalist>
+
+                        {/* Accesos rápidos dinámicos incluyendo Arquitecto AI y los más frecuentes */}
+                        {!isActivePosLocked && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px]">
+                            <span className="text-slate-500 text-[10px] font-medium mr-0.5">Sugerencias:</span>
+                            {[
+                              { label: 'Arquitecto AI', code: 'APP_AI', modName: 'Arquitecto AI' },
+                              { label: 'ABAPER', code: 'DEV_ABAP', modName: 'Desarrollador ABAP' },
+                              { label: 'Consultor MM', code: 'SAP_MM', modName: 'SAP MM' },
+                              { label: 'Consultor HCM', code: 'SAP_HCM', modName: 'SAP HCM' },
+                              { label: 'Consultor FICO', code: 'SAP_FICO', modName: 'SAP FICO' },
+                              { label: 'Consultor Basis', code: 'SAP_BASIS', modName: 'SAP Basis' }
+                            ].map(item => (
+                              <button
+                                key={item.label}
+                                type="button"
+                                onClick={() => handleSelectSpecialtyForActivePos(item.label, item.code, item.modName)}
+                                className={`px-2 py-0.5 rounded-md border text-[10px] font-bold transition-all cursor-pointer ${
+                                  activePos.roleTitle === item.label
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                                    : 'bg-white text-slate-700 border-slate-200 hover:border-blue-400 hover:bg-blue-50/70 hover:text-blue-700'
+                                }`}
+                                title={`Seleccionar ${item.label}`}
+                              >
+                                + {item.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div>
                         <label className="font-bold text-slate-700 block mb-1">Proveedor / Subcontratista Sugerido</label>
@@ -2468,20 +2941,83 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="font-bold text-slate-700 block mb-1">Tarifa Compra / Hora</label>
-                        <input
-                          type="number"
-                          required
-                          min="0"
-                          disabled={isActivePosLocked}
-                          value={activePos.hourlyRate || 0}
-                          onChange={e => handleUpdateActivePosition('hourlyRate', Math.max(0, Number(e.target.value) || 0))}
-                          className={`w-full px-3 py-2 border rounded-xl font-mono font-bold focus:outline-none transition-colors ${
-                            isActivePosLocked 
-                              ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed' 
-                              : 'bg-white text-slate-800 border-slate-300 focus:ring-1 focus:ring-blue-500'
-                          }`}
-                        />
+                        <div className="flex items-center justify-between mb-1 gap-1.5 flex-wrap">
+                          <label className="font-bold text-slate-700 block text-xs whitespace-nowrap">
+                            Tarifa Compra / Hora ({currentSolpedCurrency})
+                          </label>
+
+                          {/* Botón para tomar la tarifa estándar de la sección Módulos SAP y Perfiles */}
+                          {activePos && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                id="btn-apply-standard-rate"
+                                disabled={isActivePosLocked}
+                                onClick={() => handleApplyStandardRate(activeStandardRate, activeSeniority)}
+                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition-all border shadow-2xs ${
+                                  isActivePosLocked
+                                    ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                    : activePos.hourlyRate === activeStandardRate
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-extrabold hover:bg-emerald-100 cursor-pointer'
+                                      : 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100 hover:border-blue-400 hover:text-blue-900 cursor-pointer active:scale-95'
+                                }`}
+                                title={`Tomar tarifa estándar definida en el catálogo de Módulos SAP y Perfiles para ${activeModule?.name || 'este perfil'} (${activeSeniority}): ${formatCurrency(activeStandardRate, currentSolpedCurrency, currentSolpedSymbol)}/hr`}
+                              >
+                                <Zap className={`w-3.5 h-3.5 ${activePos.hourlyRate === activeStandardRate ? 'text-emerald-600 fill-emerald-600' : 'text-amber-500 fill-amber-500'} shrink-0`} />
+                                <span>
+                                  {activePos.hourlyRate === activeStandardRate
+                                    ? `✓ Estándar: ${formatCurrency(activeStandardRate, currentSolpedCurrency, currentSolpedSymbol)}`
+                                    : `Tomar Tarifa Estándar: ${formatCurrency(activeStandardRate, currentSolpedCurrency, currentSolpedSymbol)}`}
+                                </span>
+                              </button>
+
+                              {/* Selector rápido de seniority con tarifas de Módulos SAP y Perfiles */}
+                              {!isActivePosLocked && (
+                                <select
+                                  id="select-seniority-rate"
+                                  value={activeSeniority}
+                                  onChange={(e) => {
+                                    const newSen = e.target.value as SeniorityLevel;
+                                    const newRate = benchmarkRatesBySeniority[newSen];
+                                    handleApplyStandardRate(newRate, newSen);
+                                  }}
+                                  className="text-[10px] font-bold py-0.5 px-1.5 rounded-lg bg-slate-50 text-slate-700 border border-slate-300 hover:border-blue-400 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  title="Seleccionar nivel de experiencia y aplicar automáticamente su tarifa estándar del catálogo"
+                                >
+                                  <option value="Senior">Sr ({formatCurrency(benchmarkRatesBySeniority['Senior'], currentSolpedCurrency, currentSolpedSymbol)})</option>
+                                  <option value="Lead / Arquitecto">Lead ({formatCurrency(benchmarkRatesBySeniority['Lead / Arquitecto'], currentSolpedCurrency, currentSolpedSymbol)})</option>
+                                  <option value="Semi-Senior">S-Sr ({formatCurrency(benchmarkRatesBySeniority['Semi-Senior'], currentSolpedCurrency, currentSolpedSymbol)})</option>
+                                  <option value="Junior">Jr ({formatCurrency(benchmarkRatesBySeniority['Junior'], currentSolpedCurrency, currentSolpedSymbol)})</option>
+                                </select>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            required
+                            min="0"
+                            step={currentSolpedCurrency === 'UF' || currentSolpedCurrency === 'USD' ? '0.01' : '1'}
+                            disabled={isActivePosLocked}
+                            value={activePos.hourlyRate || 0}
+                            onChange={e => handleUpdateActivePosition('hourlyRate', Math.max(0, Number(e.target.value) || 0))}
+                            className={`w-full px-3 py-2 pr-12 border rounded-xl font-mono font-bold focus:outline-none transition-colors ${
+                              isActivePosLocked 
+                                ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed' 
+                                : 'bg-white text-slate-800 border-slate-300 focus:ring-1 focus:ring-blue-500'
+                            }`}
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-slate-400 pointer-events-none">
+                            {currentSolpedCurrency}
+                          </span>
+                        </div>
+                        {standardRateNotice && (
+                          <div className="mt-1 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1 animate-in fade-in">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>{standardRateNotice}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -2540,7 +3076,7 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                 <div className="text-xs">
                   <span className="text-slate-500">Total SOLPED Recalculado: </span>
                   <span className="font-mono font-bold text-blue-900 text-sm">
-                    {modalTotalHours.toLocaleString()} hrs @ {formatCurrency(modalTotalNet, editingSolped.currency, editingSolped.currencySymbol)}
+                    {modalTotalHours.toLocaleString()} hrs @ {formatCurrency(modalTotalNet, currentSolpedCurrency, currentSolpedSymbol)}
                   </span>
                 </div>
 
@@ -2726,6 +3262,7 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                     <input
                       type="text"
                       required
+                      list="sap-specialties-datalist"
                       value={editPoRoleTitle}
                       onChange={e => setEditPoRoleTitle(e.target.value)}
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-medium focus:bg-white focus:outline-none"

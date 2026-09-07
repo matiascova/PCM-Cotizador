@@ -3,6 +3,7 @@ import {
   SapResourceItem, 
   ServicePurchaseRequisition, 
   ServicePurchaseOrder, 
+  ServicePoItem,
   ServiceEntrySheet,
   SolpedStatus,
   PurchaseOrderStatus
@@ -145,6 +146,10 @@ export const INITIAL_PURCHASE_ORDERS: ServicePurchaseOrder[] = [
 
 export function getStoredSolpeds(): ServicePurchaseRequisition[] {
   try {
+    if (!hasConsolidatedOnce && typeof window !== 'undefined') {
+      hasConsolidatedOnce = true;
+      consolidateStoredSolpedsAndQuotations();
+    }
     const raw = localStorage.getItem(SOLPEDS_STORAGE_KEY);
     if (!raw) {
       localStorage.setItem(SOLPEDS_STORAGE_KEY, JSON.stringify(INITIAL_SOLPEDS));
@@ -188,43 +193,151 @@ export function saveStoredPurchaseOrders(pos: ServicePurchaseOrder[]): void {
 }
 
 /**
- * Synchronize SOLPEDs whenever a Quotation is saved with external resources.
- * Returns the updated resources with their assigned solpedNumber.
+ * Helper to ensure resources from the same subcontractor company within a quotation
+ * always share the same SOLPED number, with sequential position numbers (10, 20, 30...).
+ */
+export function alignQuotationResourceSolpeds(resList: SapResourceItem[]): SapResourceItem[] {
+  if (!resList || !Array.isArray(resList)) return [];
+
+  // Group external resources by normalized supplier name
+  const supplierGroups = new Map<string, SapResourceItem[]>();
+  
+  resList.forEach(r => {
+    if (r.staffingType === 'external') {
+      const key = (r.supplierName || 'Partner Subcontratista SAP').trim().toLowerCase();
+      if (!supplierGroups.has(key)) {
+        supplierGroups.set(key, []);
+      }
+      supplierGroups.get(key)!.push(r);
+    }
+  });
+
+  const resolvedInfo = new Map<string, { solpedNumber?: string; solpedPosition: number }>();
+
+  supplierGroups.forEach(group => {
+    // Pick existing solpedNumber if any specialist in this company group already has one
+    const existingNum = group.find(r => r.solpedNumber)?.solpedNumber;
+    group.forEach((r, idx) => {
+      resolvedInfo.set(r.id, {
+        solpedNumber: existingNum,
+        solpedPosition: (idx + 1) * 10
+      });
+    });
+  });
+
+  return resList.map(r => {
+    if (r.staffingType === 'external') {
+      const info = resolvedInfo.get(r.id);
+      return {
+        ...r,
+        solpedNumber: info?.solpedNumber || r.solpedNumber,
+        solpedPosition: info?.solpedPosition || r.solpedPosition || 10
+      };
+    } else {
+      return {
+        ...r,
+        staffingType: 'internal',
+        solpedId: undefined,
+        solpedNumber: undefined,
+        solpedPosition: undefined
+      };
+    }
+  });
+}
+
+/**
+ * Synchronize SOLPEDs whenever a Quotation is saved.
+ * Business Rule:
+ * - Una sola SOLPED por empresa subcontratada con posiciones (10, 20, 30...) por especialista.
+ * - Solo crea más de una SOLPED si la cotización especifica más de una empresa subcontratada.
  */
 export function syncSolpedsForQuotation(
   quotation: Quotation
 ): { updatedResources: SapResourceItem[]; generatedSolpeds: ServicePurchaseRequisition[] } {
   const existingSolpeds = getStoredSolpeds();
-  let nextSolpedNum = 10000040 + existingSolpeds.length + 1;
-
   const currentQuoteSolpeds = existingSolpeds.filter(s => s.quotationId === quotation.id);
   const otherSolpeds = existingSolpeds.filter(s => s.quotationId !== quotation.id);
 
-  const updatedResources = [...(quotation.resources || [])];
+  // Highest existing SOLPED number to avoid duplicate numbers across system
+  const maxSolpedNum = existingSolpeds.reduce((max, s) => {
+    const n = parseInt(s.solpedNumber, 10);
+    return !isNaN(n) ? Math.max(max, n) : max;
+  }, 10000040);
+  let nextSolpedNum = maxSolpedNum + 1;
+
+  const rawResources = [...(quotation.resources || [])];
+  const updatedResources: SapResourceItem[] = [];
   const newOrUpdatedSolpedsForQuote: ServicePurchaseRequisition[] = [];
 
-  updatedResources.forEach((res, index) => {
-    const isExternal = res.staffingType === 'external';
+  // Group external resources strictly by subcontractor company (supplierName)
+  const normalizeSupplier = (name?: string) => (name || 'Partner Subcontratista SAP').trim().toLowerCase();
 
-    if (isExternal) {
-      // Find matching SOLPED by resourceId or matching solpedNumber
-      let solped = currentQuoteSolpeds.find(s => s.resourceId === res.id || s.id === res.solpedId);
+  const externalResources: SapResourceItem[] = [];
+  const internalResources: SapResourceItem[] = [];
 
-      const posNum = (index + 1) * 10;
+  rawResources.forEach(res => {
+    if (res.staffingType === 'external') {
+      externalResources.push({ ...res });
+    } else {
+      internalResources.push({
+        ...res,
+        staffingType: 'internal',
+        solpedId: undefined,
+        solpedNumber: undefined,
+        solpedPosition: undefined
+      });
+    }
+  });
+
+  const supplierGroups = new Map<string, SapResourceItem[]>();
+  externalResources.forEach(res => {
+    const key = normalizeSupplier(res.supplierName);
+    if (!supplierGroups.has(key)) {
+      supplierGroups.set(key, []);
+    }
+    supplierGroups.get(key)!.push(res);
+  });
+
+  // Process each company group: ONE SOLPED per company with specialist positions
+  supplierGroups.forEach((groupResources, supplierKey) => {
+    // Determine the single SOLPED number for this company group
+    const existingGroupSolped = currentQuoteSolpeds.find(s => 
+      normalizeSupplier(s.supplierName) === supplierKey ||
+      groupResources.some(r => r.solpedNumber === s.solpedNumber || r.solpedId === s.id)
+    );
+
+    const solpedNumber = existingGroupSolped?.solpedNumber || 
+      groupResources.find(r => r.solpedNumber)?.solpedNumber || 
+      String(nextSolpedNum++);
+
+    // Check if previously converted to PO
+    const convertedPoId = existingGroupSolped?.convertedPoId || 
+      groupResources.find(r => r.purchaseOrderId)?.purchaseOrderId;
+    const convertedPoNumber = existingGroupSolped?.convertedPoNumber || 
+      groupResources.find(r => r.purchaseOrderNumber)?.purchaseOrderNumber;
+    const isAlreadyConverted = !!convertedPoId || existingGroupSolped?.status === 'converted_to_po';
+
+    // Each specialist in this company group gets a position (10, 20, 30...)
+    groupResources.forEach((res, posIdx) => {
+      const posNum = (posIdx + 1) * 10;
       const hourlyCost = res.externalCostRate && res.externalCostRate > 0 ? res.externalCostRate : res.hourlyRate;
       const totalCost = res.hours * hourlyCost;
-      const supplierName = res.supplierName?.trim() || 'Subcontratista / Partner Externo SAP';
+      const supplierDisplayName = res.supplierName?.trim() || existingGroupSolped?.supplierName || 'Partner Subcontratista SAP';
 
-      if (!solped) {
-        // Generate new SAP SOLPED (ME51N)
-        const newNumber = String(nextSolpedNum++);
-        solped = {
-          id: `sol-${Date.now()}-${index}`,
-          solpedNumber: newNumber,
+      let solpedPos = currentQuoteSolpeds.find(s => 
+        (s.solpedNumber === solpedNumber && s.positionNumber === posNum) ||
+        (s.resourceId === res.id) ||
+        (s.id === res.solpedId)
+      );
+
+      if (!solpedPos) {
+        solpedPos = {
+          id: `sol-${quotation.id}-${solpedNumber}-pos-${posNum}`,
+          solpedNumber,
           documentType: 'NB',
           itemCategory: 'D',
           accountAssignmentCategory: 'P',
-          pepElement: `PEP-${quotation.code.replace('COT-', '')}.${index + 1}`,
+          pepElement: `PEP-${quotation.code.replace('COT-', '')}.${posIdx + 1}`,
           costCenter: 'CC-10100',
           quotationId: quotation.id,
           quotationCode: quotation.code,
@@ -236,47 +349,64 @@ export function syncSolpedsForQuotation(
           moduleCode: res.moduleCode,
           moduleName: res.moduleName,
           seniority: res.seniority,
-          supplierName: supplierName,
-          supplierTaxId: res.supplierTaxId,
+          supplierName: supplierDisplayName,
+          supplierTaxId: res.supplierTaxId || existingGroupSolped?.supplierTaxId,
           hours: res.hours,
           unit: 'HUR',
           hourlyRate: hourlyCost,
           currency: quotation.currency,
           currencySymbol: quotation.currencySymbol,
           totalAmount: totalCost,
-          status: 'pending_approval',
+          status: isAlreadyConverted ? 'converted_to_po' : (existingGroupSolped?.status === 'approved' ? 'approved' : 'pending_approval'),
+          convertedPoId: isAlreadyConverted ? convertedPoId : undefined,
+          convertedPoNumber: isAlreadyConverted ? convertedPoNumber : undefined,
           requisitioner: 'PMO Lead / Jefe de Proyecto SAP',
-          createdAt: new Date().toISOString().slice(0, 10),
-          notes: `Solicitud de Pedido de Servicio originada automáticamente desde cotización ${quotation.code}.`
+          createdAt: existingGroupSolped?.createdAt || new Date().toISOString().slice(0, 10),
+          notes: `Posición ${posNum} de SOLPED de Servicio originada automáticamente desde cotización ${quotation.code} para ${supplierDisplayName}.`
         };
       } else {
-        // Update existing SOLPED details
-        solped = {
-          ...solped,
+        solpedPos = {
+          ...solpedPos,
+          solpedNumber,
+          positionNumber: posNum,
+          resourceId: res.id,
           quotationCode: quotation.code,
           clientCompanyName: quotation.client.companyName,
           projectTitle: quotation.project.projectTitle,
-          roleTitle: res.roleTitle,
+          roleTitle: res.roleTitle || solpedPos.roleTitle,
+          moduleCode: res.moduleCode,
+          moduleName: res.moduleName,
+          seniority: res.seniority,
           hours: res.hours,
           hourlyRate: hourlyCost,
           currency: quotation.currency,
           currencySymbol: quotation.currencySymbol,
           totalAmount: totalCost,
-          supplierName: supplierName
+          supplierName: supplierDisplayName,
+          supplierTaxId: res.supplierTaxId || solpedPos.supplierTaxId || existingGroupSolped?.supplierTaxId,
+          status: isAlreadyConverted ? 'converted_to_po' : solpedPos.status,
+          convertedPoId: isAlreadyConverted ? convertedPoId : solpedPos.convertedPoId,
+          convertedPoNumber: isAlreadyConverted ? convertedPoNumber : solpedPos.convertedPoNumber
         };
       }
 
-      newOrUpdatedSolpedsForQuote.push(solped);
-      res.solpedId = solped.id;
-      res.solpedNumber = solped.solpedNumber;
-      res.supplierName = supplierName;
-    } else {
-      // If resource is internal, ensure it has no active pending SOLPED
-      res.staffingType = 'internal';
-    }
+      newOrUpdatedSolpedsForQuote.push(solpedPos);
+      res.solpedId = solpedPos.id;
+      res.solpedNumber = solpedNumber;
+      res.solpedPosition = posNum;
+      res.supplierName = supplierDisplayName;
+      if (isAlreadyConverted && convertedPoId) {
+        res.purchaseOrderId = convertedPoId;
+        res.purchaseOrderNumber = convertedPoNumber;
+      }
+      updatedResources.push(res);
+    });
   });
 
-  // Keep any previously converted/approved solpeds that were already processed
+  // Re-append internal resources in original relative order
+  internalResources.forEach(res => updatedResources.push(res));
+
+  // Preserve any previously converted solpeds from this quotation
   currentQuoteSolpeds.forEach(prev => {
     if (prev.status === 'converted_to_po' && !newOrUpdatedSolpedsForQuote.some(s => s.id === prev.id)) {
       newOrUpdatedSolpedsForQuote.push(prev);
@@ -294,37 +424,45 @@ export function syncSolpedsForQuotation(
 
 /**
  * Release/Approve a SOLPED in SAP MM (ME54N)
+ * Approves all positions of this SOLPED.
  */
 export function releaseSolped(
-  solpedId: string, 
+  solpedIdentifier: string, 
   approverName: string = 'Gerente de Proyectos / PMO'
 ): ServicePurchaseRequisition | null {
   const solpeds = getStoredSolpeds();
-  const index = solpeds.findIndex(s => s.id === solpedId);
-  if (index === -1) return null;
+  const target = solpeds.find(s => s.id === solpedIdentifier || s.solpedNumber === solpedIdentifier);
+  if (!target) return null;
 
-  const solped = solpeds[index];
-  const updated: ServicePurchaseRequisition = {
-    ...solped,
-    status: 'approved',
-    releaseStrategy: {
-      group: 'SR',
-      code: 'L1',
-      releasedBy: approverName,
-      releasedAt: new Date().toISOString().slice(0, 10)
+  const solpedNumber = target.solpedNumber;
+  const updatedSolpeds = solpeds.map(s => {
+    if (s.solpedNumber === solpedNumber) {
+      return {
+        ...s,
+        status: 'approved' as const,
+        releaseStrategy: {
+          group: 'SR',
+          code: 'L1',
+          releasedBy: approverName,
+          releasedAt: new Date().toISOString().slice(0, 10)
+        }
+      };
     }
-  };
+    return s;
+  });
 
-  solpeds[index] = updated;
-  saveStoredSolpeds(solpeds);
-  return updated;
+  saveStoredSolpeds(updatedSolpeds);
+  return updatedSolpeds.find(s => s.id === target.id) || null;
 }
 
 /**
- * Convert an approved SOLPED into an SAP Purchase Order (ME21N)
+ * Convert an approved SOLPED into an SAP Purchase Order (ME21N).
+ * Business Rule:
+ * - Al momento de crear una orden de compra, se debe crear una sola orden de compra para la misma SOLPED.
+ * - Consolida todas las posiciones de la SOLPED en una única Orden de Compra oficial.
  */
 export function convertSolpedToPurchaseOrder(
-  solpedId: string,
+  solpedIdentifier: string,
   extraDetails?: {
     supplierName?: string;
     supplierTaxId?: string;
@@ -332,72 +470,159 @@ export function convertSolpedToPurchaseOrder(
     paymentTerms?: string;
     buyerNotes?: string;
   }
-): { purchaseOrder: ServicePurchaseOrder; updatedSolped: ServicePurchaseRequisition } | null {
+): { 
+  purchaseOrder: ServicePurchaseOrder; 
+  updatedSolped: ServicePurchaseRequisition;
+  allUpdatedPositions: ServicePurchaseRequisition[];
+} | null {
   const solpeds = getStoredSolpeds();
-  const solped = solpeds.find(s => s.id === solpedId);
-  if (!solped) return null;
+  const targetSolped = solpeds.find(s => s.id === solpedIdentifier || s.solpedNumber === solpedIdentifier);
+  if (!targetSolped) return null;
+
+  const solpedNumber = targetSolped.solpedNumber;
+  const relatedPositions = solpeds.filter(s => s.solpedNumber === solpedNumber);
 
   const purchaseOrders = getStoredPurchaseOrders();
+  // ENFORCE RULE: A single Purchase Order per SOLPED!
+  const existingPo = purchaseOrders.find(p => p.solpedNumber === solpedNumber);
+
+  if (existingPo) {
+    // If a PO already exists for this SOLPED, ensure all positions are marked converted and return it
+    const allUpdatedPositions = relatedPositions.map(pos => ({
+      ...pos,
+      status: 'converted_to_po' as const,
+      convertedPoId: existingPo.id,
+      convertedPoNumber: existingPo.poNumber
+    }));
+    const updatedSolpeds = solpeds.map(s => {
+      const match = allUpdatedPositions.find(p => p.id === s.id);
+      return match || s;
+    });
+    saveStoredSolpeds(updatedSolpeds);
+    return {
+      purchaseOrder: existingPo,
+      updatedSolped: allUpdatedPositions.find(p => p.id === targetSolped.id) || allUpdatedPositions[0],
+      allUpdatedPositions
+    };
+  }
+
+  // Create ONE single Purchase Order consolidating all positions of this SOLPED
   const nextPoNum = 4500000100 + purchaseOrders.length + 1;
   const poNumber = String(nextPoNum);
 
-  const supplier = extraDetails?.supplierName || solped.supplierName || 'Partner Subcontratista SAP';
-  const netAmount = solped.totalAmount;
-  const taxRatePercentage = solped.currency === 'CLP' ? 19 : solped.currency === 'MXN' ? 16 : 0;
+  const supplier = extraDetails?.supplierName || targetSolped.supplierName || 'Partner Subcontratista SAP';
+  const totalHours = relatedPositions.reduce((sum, p) => sum + (Number(p.hours) || 0), 0);
+  const netAmount = relatedPositions.reduce((sum, p) => sum + (Number(p.totalAmount) || 0), 0);
+  const taxRatePercentage = targetSolped.currency === 'CLP' ? 19 : targetSolped.currency === 'MXN' ? 16 : 0;
   const taxAmount = Math.round((netAmount * taxRatePercentage) / 100);
   const totalAmount = netAmount + taxAmount;
+  const averageHourlyRate = totalHours > 0 ? Number((netAmount / totalHours).toFixed(2)) : targetSolped.hourlyRate;
+
+  const roleTitle = relatedPositions.length === 1
+    ? targetSolped.roleTitle
+    : `Servicios Especializados (${relatedPositions.length} especialistas: ${relatedPositions.map(p => p.roleTitle).join(', ')})`;
+
+  // Consolidate all positions into PO items
+  const items: ServicePoItem[] = relatedPositions.map(pos => ({
+    positionNumber: pos.positionNumber,
+    roleTitle: pos.roleTitle,
+    moduleCode: pos.moduleCode,
+    seniority: pos.seniority,
+    hours: pos.hours,
+    hourlyRate: pos.hourlyRate,
+    totalAmount: pos.totalAmount,
+    pepElement: pos.pepElement,
+    costCenter: pos.costCenter,
+    resourceId: pos.resourceId
+  }));
 
   const newPo: ServicePurchaseOrder = {
     id: `po-${Date.now()}`,
     poNumber,
-    solpedId: solped.id,
-    solpedNumber: solped.solpedNumber,
+    solpedId: targetSolped.id,
+    solpedNumber: targetSolped.solpedNumber,
     documentType: 'NB',
-    quotationId: solped.quotationId,
-    quotationCode: solped.quotationCode,
-    clientCompanyName: solped.clientCompanyName,
-    projectTitle: solped.projectTitle,
+    quotationId: targetSolped.quotationId,
+    quotationCode: targetSolped.quotationCode,
+    clientCompanyName: targetSolped.clientCompanyName,
+    projectTitle: targetSolped.projectTitle,
     supplierName: supplier,
-    supplierTaxId: extraDetails?.supplierTaxId || solped.supplierTaxId || '76.000.000-0',
+    supplierTaxId: extraDetails?.supplierTaxId || targetSolped.supplierTaxId || '76.884.210-9',
     supplierEmail: extraDetails?.supplierEmail || 'compras@proveedor-sap.com',
     paymentTerms: extraDetails?.paymentTerms || '30 días fecha factura contra HES (Hoja de Entrada de Servicios)',
-    roleTitle: solped.roleTitle,
-    moduleCode: solped.moduleCode,
-    hoursContracted: solped.hours,
-    hourlyRate: solped.hourlyRate,
-    currency: solped.currency,
-    currencySymbol: solped.currencySymbol,
+    roleTitle,
+    moduleCode: targetSolped.moduleCode,
+    hoursContracted: totalHours,
+    hourlyRate: averageHourlyRate,
+    currency: targetSolped.currency,
+    currencySymbol: targetSolped.currencySymbol,
     netAmount,
     taxRatePercentage,
     taxAmount,
     totalAmount,
-    pepElement: solped.pepElement,
-    costCenter: solped.costCenter,
+    pepElement: targetSolped.pepElement,
+    costCenter: targetSolped.costCenter,
     issueDate: new Date().toISOString().slice(0, 10),
     estimatedDeliveryDate: new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10),
     status: 'issued',
     serviceEntrySheets: [],
-    buyerNotes: extraDetails?.buyerNotes || `Orden de compra generada a partir de SOLPED ${solped.solpedNumber} (Cotización ${solped.quotationCode}).`,
-    companySigner: 'Gerencia de Abastecimiento & Compras'
+    buyerNotes: extraDetails?.buyerNotes || `Orden de compra única generada para SOLPED ${targetSolped.solpedNumber} (${relatedPositions.length} posiciones de servicio, Cotización ${targetSolped.quotationCode}).`,
+    companySigner: 'Gerencia de Abastecimiento & Compras',
+    items
   };
 
-  // Update SOLPED status
-  const updatedSolped: ServicePurchaseRequisition = {
-    ...solped,
-    status: 'converted_to_po',
+  // Mark ALL positions of this SOLPED as converted_to_po with this new PO
+  const allUpdatedPositions = relatedPositions.map(pos => ({
+    ...pos,
+    status: 'converted_to_po' as const,
     convertedPoId: newPo.id,
     convertedPoNumber: newPo.poNumber
-  };
+  }));
 
-  const updatedSolpeds = solpeds.map(s => (s.id === solped.id ? updatedSolped : s));
+  const updatedSolpeds = solpeds.map(s => {
+    const match = allUpdatedPositions.find(p => p.id === s.id);
+    return match || s;
+  });
   saveStoredSolpeds(updatedSolpeds);
 
   const updatedPos = [newPo, ...purchaseOrders];
   saveStoredPurchaseOrders(updatedPos);
 
+  // Sync quotation resources in localStorage
+  try {
+    const rawQuotes = localStorage.getItem('sap_quotations_v1_data');
+    if (rawQuotes) {
+      const quotes = JSON.parse(rawQuotes);
+      let quotesChanged = false;
+      const updatedQuotes = quotes.map((q: any) => {
+        if (q.id === targetSolped.quotationId && q.resources && Array.isArray(q.resources)) {
+          const updatedRes = q.resources.map((r: any) => {
+            if (r.solpedNumber === solpedNumber || relatedPositions.some(p => p.resourceId === r.id)) {
+              quotesChanged = true;
+              return {
+                ...r,
+                purchaseOrderId: newPo.id,
+                purchaseOrderNumber: newPo.poNumber
+              };
+            }
+            return r;
+          });
+          return { ...q, resources: updatedRes };
+        }
+        return q;
+      });
+      if (quotesChanged) {
+        localStorage.setItem('sap_quotations_v1_data', JSON.stringify(updatedQuotes));
+      }
+    }
+  } catch (err) {
+    console.warn('Error syncing quotation resources with PO:', err);
+  }
+
   return {
     purchaseOrder: newPo,
-    updatedSolped
+    updatedSolped: allUpdatedPositions.find(p => p.id === targetSolped.id) || allUpdatedPositions[0],
+    allUpdatedPositions
   };
 }
 
@@ -761,4 +986,121 @@ export function deleteSolpedPosition(positionId: string): boolean {
   const remaining = allSolpeds.filter(s => s.id !== positionId);
   saveStoredSolpeds(remaining);
   return true;
+}
+
+let hasConsolidatedOnce = false;
+
+/**
+ * Ensures existing stored quotations and SOLPEDs conform to:
+ * - Single SOLPED per subcontractor company (with positions 10, 20...)
+ * - Single PO per SOLPED
+ */
+export function consolidateStoredSolpedsAndQuotations(): void {
+  try {
+    const rawQuotes = localStorage.getItem('sap_quotations_v1_data');
+    const rawSolpeds = localStorage.getItem(SOLPEDS_STORAGE_KEY);
+    const rawPos = localStorage.getItem(PO_STORAGE_KEY);
+
+    if (!rawQuotes && !rawSolpeds) return;
+
+    let quotes: Quotation[] = rawQuotes ? JSON.parse(rawQuotes) : [];
+    let solpeds: ServicePurchaseRequisition[] = rawSolpeds ? JSON.parse(rawSolpeds) : INITIAL_SOLPEDS;
+    let pos: ServicePurchaseOrder[] = rawPos ? JSON.parse(rawPos) : INITIAL_PURCHASE_ORDERS;
+
+    let quotesChanged = false;
+    let solpedsChanged = false;
+    let posChanged = false;
+
+    // 1. Group quotation resources by subcontractor company
+    quotes = quotes.map(q => {
+      if (!q.resources || !Array.isArray(q.resources)) return q;
+      const externalRes = q.resources.filter(r => r.staffingType === 'external');
+      if (externalRes.length === 0) return q;
+
+      const groups = new Map<string, SapResourceItem[]>();
+      externalRes.forEach(r => {
+        const key = (r.supplierName || 'Partner Subcontratista SAP').trim().toLowerCase();
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(r);
+      });
+
+      let quoteModified = false;
+      const resMap = new Map<string, { solpedNumber: string; solpedPosition: number }>();
+
+      groups.forEach(group => {
+        // Pick the lowest / first existing solpedNumber among this group
+        const existingNum = group.find(r => r.solpedNumber)?.solpedNumber ||
+          solpeds.find(s => s.quotationId === q.id && (s.supplierName?.trim().toLowerCase() === group[0].supplierName?.trim().toLowerCase()))?.solpedNumber;
+
+        if (existingNum) {
+          group.forEach((r, idx) => {
+            const expectedPos = (idx + 1) * 10;
+            if (r.solpedNumber !== existingNum || r.solpedPosition !== expectedPos) {
+              quoteModified = true;
+            }
+            resMap.set(r.id, {
+              solpedNumber: existingNum,
+              solpedPosition: expectedPos
+            });
+          });
+        }
+      });
+
+      if (quoteModified) {
+        quotesChanged = true;
+        const updatedResources = q.resources.map(r => {
+          const mapping = resMap.get(r.id);
+          if (mapping) {
+            return {
+              ...r,
+              solpedNumber: mapping.solpedNumber,
+              solpedPosition: mapping.solpedPosition
+            };
+          }
+          return r;
+        });
+        return { ...q, resources: updatedResources };
+      }
+      return q;
+    });
+
+    // 2. Align stored solpeds with the consolidated positions
+    quotes.forEach(q => {
+      if (!q.resources) return;
+      const externalRes = q.resources.filter(r => r.staffingType === 'external');
+      externalRes.forEach(r => {
+        if (!r.solpedNumber) return;
+        const match = solpeds.find(s => s.resourceId === r.id || (s.quotationId === q.id && s.roleTitle === r.roleTitle));
+        if (match && (match.solpedNumber !== r.solpedNumber || match.positionNumber !== r.solpedPosition)) {
+          match.solpedNumber = r.solpedNumber;
+          match.positionNumber = r.solpedPosition || 10;
+          solpedsChanged = true;
+        }
+      });
+    });
+
+    // 3. Ensure 1:1 PO per SOLPED: deduplicate POs if more than one exists for same solpedNumber
+    const seenSolpedPos = new Set<string>();
+    const deduplicatedPos: ServicePurchaseOrder[] = [];
+    pos.forEach(p => {
+      if (!seenSolpedPos.has(p.solpedNumber)) {
+        seenSolpedPos.add(p.solpedNumber);
+        deduplicatedPos.push(p);
+      } else {
+        posChanged = true;
+      }
+    });
+
+    if (quotesChanged) {
+      localStorage.setItem('sap_quotations_v1_data', JSON.stringify(quotes));
+    }
+    if (solpedsChanged) {
+      localStorage.setItem(SOLPEDS_STORAGE_KEY, JSON.stringify(solpeds));
+    }
+    if (posChanged) {
+      localStorage.setItem(PO_STORAGE_KEY, JSON.stringify(deduplicatedPos));
+    }
+  } catch (err) {
+    console.warn('Could not consolidate stored solpeds and quotations:', err);
+  }
 }

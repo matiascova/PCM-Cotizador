@@ -71,6 +71,7 @@ export interface SapResourceItem {
   externalCostRate?: number; // Tarifa costo / compra pactada con el proveedor
   solpedId?: string; // ID de la Solicitud de Pedido generada
   solpedNumber?: string; // Código SAP SOLPED (ej. "10000042")
+  solpedPosition?: number; // Posición dentro de la SOLPED (ej. 10, 20)
   purchaseOrderId?: string; // ID de la Orden de Compra
   purchaseOrderNumber?: string; // Código SAP OC (ej. "45000012")
 }
@@ -448,4 +449,24 @@ export interface ServicePurchaseOrder {
   serviceEntrySheets: ServiceEntrySheet[];
   buyerNotes?: string;
   companySigner?: string;
+
+  // Posiciones de la Orden de Compra (si consolida múltiples especialistas de la misma SOLPED)
+  items?: ServicePoItem[];
 }
+
+/**
+ * Posición individual de una Orden de Compra de Servicio
+ */
+export interface ServicePoItem {
+  positionNumber: number;
+  roleTitle: string;
+  moduleCode?: SapModuleCode;
+  seniority?: string;
+  hours: number;
+  hourlyRate: number;
+  totalAmount: number;
+  pepElement?: string;
+  costCenter?: string;
+  resourceId?: string;
+}
+
