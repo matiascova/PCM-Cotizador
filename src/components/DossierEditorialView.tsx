@@ -7,7 +7,9 @@ import {
   AlertTriangle,
   Building2,
   CheckCircle2,
-  Handshake
+  Handshake,
+  Clock,
+  Globe2
 } from 'lucide-react';
 import { Quotation, CompanyProfile } from '../types';
 import { calculateQuotationTotals, formatCurrency } from '../utils/calculations';
@@ -20,6 +22,10 @@ import {
   DEFAULT_GATEKEEPER_CONDITION, 
   getDossierPresetsByProjectType 
 } from '../data/dossierPresets';
+import { GanttTimelineView } from './gantt/GanttTimelineView';
+import { createDefaultGanttPlanForQuotation } from '../data/ganttTemplates';
+import { computeGanttStages, formatPresentationDate } from '../utils/ganttDateUtils';
+import { COUNTRIES } from '../utils/ganttHolidayUtils';
 
 export interface DossierEditorialViewProps {
   quote: Quotation;
@@ -40,6 +46,21 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
 
   const clientLogoUrl = getClientLogo(quote.client);
   const clientDisplayName = quote.client.fantasyName || quote.client.companyName;
+
+  // Effective Gantt Plan for PDF presentation
+  const effectiveGanttPlan = quote.ganttPlan || createDefaultGanttPlanForQuotation(
+    quote.project.projectTitle,
+    quote.project.estimatedStartDate,
+    quote.client.country
+  );
+  const ganttComputed = computeGanttStages(
+    effectiveGanttPlan.stages,
+    effectiveGanttPlan.settings.startDate,
+    effectiveGanttPlan.settings.calendar,
+    effectiveGanttPlan.settings.presentationWindow
+  );
+  const ganttCountry = COUNTRIES.find((c) => c.code === effectiveGanttPlan.settings.calendar?.country) || COUNTRIES[0];
+  const ganttFinalStage = ganttComputed.computedStages[ganttComputed.computedStages.length - 1];
 
   // Dynamic Dossier Values (with presets fallback)
   const defaultPresets = getDossierPresetsByProjectType(quote.project.projectType || 'Roll-out de Módulos');
@@ -663,10 +684,109 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* PÁGINA 5: FUERA DE ALCANCE Y MATRIZ DE RIESGOS                */}
+      {/* PÁGINA 5: PLANIFICACIÓN Y CRONOGRAMA EJECUTIVO (CARTA GANTT)  */}
       {/* ------------------------------------------------------------- */}
       <div 
         id="dossier-page-5"
+        data-theme="light"
+        className="dossier-page dossier-page-interior relative min-h-[1050px] w-full bg-white text-slate-900 rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-12 pl-12 sm:pl-20 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page flex flex-col justify-between"
+      >
+        {/* Margen Lateral Izquierdo */}
+        <div className="absolute left-0 top-0 bottom-0 w-10 sm:w-12 border-r border-slate-200 bg-slate-50 flex flex-col items-center justify-between py-6">
+          <div className="w-6 h-6 border border-slate-300 bg-white flex items-center justify-center rounded text-[9px] font-mono font-bold text-slate-700">GANTT</div>
+          <div className="[writing-mode:vertical-rl] rotate-180 text-[9px] font-mono text-slate-400 tracking-wider whitespace-nowrap">
+            Cronograma Ejecutivo SAP · Cotización {quote.code} v{quote.version}
+          </div>
+          <div className="flex flex-col gap-0.5 w-4 opacity-75">
+            {[4, 2, 6, 3, 5, 2, 7, 4, 1, 5].map((h, i) => (
+              <div key={i} className="bg-blue-800 w-full" style={{ height: `${h * 1.5}px` }} />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-6">
+            <span className="text-xs font-bold uppercase tracking-widest text-blue-700 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5" />
+              PLANIFICACIÓN EJECUTIVA & CARTA GANTT
+            </span>
+            <span className="text-xs font-mono font-bold text-slate-400">
+              {quote.code}
+            </span>
+          </div>
+
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-950 mb-2">
+            Cronograma de Ejecución a Alto Nivel
+          </h2>
+          <p className="text-xs text-slate-600 mb-6">
+            Secuencia temporal de eventos clave, hitos y actividades críticas para el despliegue del proyecto SAP.
+          </p>
+
+          {/* Render the Executive Gantt Chart */}
+          <div className="mb-6 rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+            <GanttTimelineView
+              plan={effectiveGanttPlan}
+              isCompactForPdf={true}
+            />
+          </div>
+
+          {/* Desglose de Fases y Parámetros del Cronograma */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/70 space-y-2">
+              <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-blue-600" />
+                Resumen de Cronograma
+              </h4>
+              <ul className="space-y-1.5 text-[11px] text-slate-700">
+                <li className="flex justify-between border-b border-slate-200/60 pb-1">
+                  <span className="text-slate-500">Fecha de Inicio Estimada:</span>
+                  <span className="font-bold text-slate-900 font-mono">{effectiveGanttPlan.settings.startDate}</span>
+                </li>
+                <li className="flex justify-between border-b border-slate-200/60 pb-1">
+                  <span className="text-slate-500">Duración Estimada:</span>
+                  <span className="font-bold text-slate-900">
+                    ~{quote.project.durationMonths} meses ({ganttComputed.computedStages.reduce((a, s) => a + (s.durationUnit === 'weeks' ? s.duration : s.duration / 5), 0).toFixed(1)} semanas)
+                  </span>
+                </li>
+                <li className="flex justify-between border-b border-slate-200/60 pb-1">
+                  <span className="text-slate-500">Fases Consecutivas:</span>
+                  <span className="font-bold text-slate-900">{effectiveGanttPlan.stages.length} etapas</span>
+                </li>
+                <li className="flex justify-between">
+                  <span className="text-slate-500">Hito Crítico (Go-Live):</span>
+                  <span className="font-bold text-blue-700">
+                    {formatPresentationDate(ganttFinalStage?.computedEndDate || effectiveGanttPlan.settings.startDate, true)}
+                  </span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/70 space-y-2">
+              <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                Calendario & Días Laborables
+              </h4>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                El cronograma calcula plazos basados en días hábiles efectivos, excluyendo fines de semana (semana de {effectiveGanttPlan.settings.calendar.workingDaysPerWeek} días)
+                {effectiveGanttPlan.settings.calendar.includeHolidays ? ` y los feriados legales oficiales de ${ganttCountry?.name || 'Chile'}.` : '.'}
+              </p>
+              <div className="pt-1 text-[10px] text-slate-500 italic">
+                * Las fechas pueden ser ajustadas de mutuo acuerdo ante retrasos en la disponibilidad de accesos o aprobación de entregables según lo estipulado en la Condición Gatekeeper.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="text-right text-xs font-mono text-slate-400 pt-4 border-t border-slate-100">
+          Página 5
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------- */}
+      {/* PÁGINA 6: FUERA DE ALCANCE Y MATRIZ DE RIESGOS                */}
+      {/* ------------------------------------------------------------- */}
+      <div 
+        id="dossier-page-6"
         data-theme="light"
         className="dossier-page dossier-page-interior relative min-h-[1050px] w-full bg-white text-slate-900 rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-12 pl-12 sm:pl-20 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page flex flex-col justify-between"
       >
@@ -749,15 +869,15 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
         </div>
 
         <div className="text-right text-xs font-mono text-slate-400 pt-4 border-t border-slate-100">
-          Página 5
+          Página 6
         </div>
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* PÁGINA 6: PROPUESTA COMPLETA, RESUMEN LEGAL Y FIRMAS          */}
+      {/* PÁGINA 7: PROPUESTA COMPLETA, RESUMEN LEGAL Y FIRMAS          */}
       {/* ------------------------------------------------------------- */}
       <div 
-        id="dossier-page-6"
+        id="dossier-page-7"
         data-theme="light"
         className="dossier-page dossier-page-interior relative min-h-[1050px] w-full bg-white text-slate-900 rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-12 pl-12 sm:pl-20 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page flex flex-col justify-between"
       >
@@ -929,15 +1049,15 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
         </div>
 
         <div className="text-right text-xs font-mono text-slate-400 pt-4 border-t border-slate-100">
-          Página 6
+          Página 7
         </div>
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* PÁGINA 7: CONTRAPORTADA CINEMÁTICA DE CIERRE                  */}
+      {/* PÁGINA 8: CONTRAPORTADA CINEMÁTICA DE CIERRE                  */}
       {/* ------------------------------------------------------------- */}
       <div 
-        id="dossier-page-7"
+        id="dossier-page-8"
         data-theme="dark"
         className="dossier-page dossier-page-backcover relative min-h-[900px] w-full bg-slate-950 text-white rounded-2xl overflow-hidden shadow-2xl border border-slate-800 flex flex-col justify-between p-8 sm:p-14 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page"
       >

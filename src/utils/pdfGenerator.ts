@@ -304,6 +304,54 @@ export function generateQuotationPDF(quote: Quotation): jsPDF {
   // @ts-expect-error autoTable adds lastAutoTable
   currentY = doc.lastAutoTable.finalY + 7;
 
+  // 3.1 Cronograma Ejecutivo de Fases Gantt SAP
+  if (quote.ganttPlan && quote.ganttPlan.stages && quote.ganttPlan.stages.length > 0) {
+    if (currentY > pageHeight - 50) {
+      doc.addPage();
+      currentY = 20;
+    }
+    doc.setTextColor(...primaryNavy);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.text('3.1 CRONOGRAMA EJECUTIVO DE FASES SAP (CARTA GANTT)', margin, currentY);
+    currentY += 3;
+
+    const ganttTableData = quote.ganttPlan.stages.map((stg, i) => [
+      `#${i + 1} ${stg.name}${stg.isMilestone ? ' ★ [Hito Crítico]' : ''}`,
+      `${stg.duration} ${stg.durationUnit === 'weeks' ? 'semanas' : 'días hábiles'}`,
+      stg.startType === 'sequential' ? 'Consecutivo (Auto)' : stg.startType === 'custom_date' ? 'Fecha fija' : 'Desfase',
+      stg.responsible || 'Equipo Consultor SAP'
+    ]);
+
+    autoTable(doc, {
+      startY: currentY,
+      margin: { left: margin, right: margin },
+      head: [['Fase / Actividad Gantt', 'Duración Estimada', 'Modalidad Inicio', 'Responsable']],
+      body: ganttTableData,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [30, 58, 138],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 7.5
+      },
+      bodyStyles: {
+        textColor: textDark,
+        fontSize: 7,
+        cellPadding: 2
+      },
+      columnStyles: {
+        0: { cellWidth: 70, fontStyle: 'bold' },
+        1: { cellWidth: 35 },
+        2: { cellWidth: 35 },
+        3: { cellWidth: 40 }
+      }
+    });
+
+    // @ts-expect-error autoTable adds lastAutoTable
+    currentY = doc.lastAutoTable.finalY + 7;
+  }
+
   // ==========================================
   // Section 4: Financial Summary & Commercial Terms
   // ==========================================

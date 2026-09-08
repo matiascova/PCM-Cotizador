@@ -265,6 +265,9 @@ export interface Quotation {
   actualProjectCode?: string;
   updatedAt: string;
 
+  // Planificación Ejecutiva Gantt SAP
+  ganttPlan?: ProjectPlan;
+
   // Dossier Editorial (Estilo Bridev) Inputs
   currentSituationHoy?: string;
   builtSolutionQuedaConstruido?: string;
@@ -468,5 +471,111 @@ export interface ServicePoItem {
   pepElement?: string;
   costCenter?: string;
   resourceId?: string;
+}
+
+// ==========================================
+// SAP EXECUTIVE GANTT CHART PLANNING MODULE
+// ==========================================
+export type DurationUnit = 'weeks' | 'days';
+export type StartType = 'sequential' | 'custom_date' | 'offset';
+export type MilestoneIconType = 'star' | 'flag' | 'rocket' | 'check' | 'target' | 'diamond';
+export type CountryCode = 'CL' | 'MX' | 'ES' | 'CO' | 'AR' | 'PE' | 'US' | 'NONE';
+
+export interface CalendarConfig {
+  country: CountryCode;
+  includeHolidays: boolean;
+  workingDaysPerWeek: 5 | 6 | 7;
+  customHolidays?: string[];
+}
+
+export interface Stage {
+  id: string;
+  name: string;
+  duration: number;
+  durationUnit: DurationUnit;
+  startType: StartType;
+  customStartDate?: string;
+  customEndDate?: string;
+  offsetFromPrevious?: number;
+  isMilestone?: boolean;
+  milestoneIcon?: MilestoneIconType;
+  customColor?: string;
+  progress?: number;
+  notes?: string;
+  responsible?: string;
+}
+
+export interface ColorTheme {
+  id: string;
+  name: string;
+  sapFamily: string;
+  barColor: string;
+  barHover: string;
+  barText: string;
+  accentColor: string;
+  milestoneColor: string;
+  headerBg: string;
+  gridColor: string;
+  previewBg: string;
+  badgeBg: string;
+}
+
+export interface ProjectSettings {
+  id: string;
+  title: string;
+  subtitle?: string;
+  companyOrArea?: string;
+  startDate: string;
+  themeId: string;
+  calendar: CalendarConfig;
+  showWeekNumbers: boolean;
+  showDateBadges: boolean;
+  showDurationOnBars: boolean;
+  showProgress: boolean;
+  showResponsible: boolean;
+  showGridLines: boolean;
+  showHolidaysNotice: boolean;
+  aspectRatio: '16:9' | '4:3' | 'auto';
+  presentationWindow?: 'auto' | '1_month' | '2_months' | '3_months' | '4_months' | '6_months' | '12_months';
+  barStyle: 'rounded' | 'pills' | 'minimal';
+  labelPosition: 'beside' | 'inside' | 'auto';
+  backgroundStyle: 'white' | 'subtle-slate' | 'navy-dark' | 'sap-fiori';
+}
+
+export interface ProjectPlan {
+  settings: ProjectSettings;
+  stages: Stage[];
+}
+
+export interface ComputedStage extends Stage {
+  computedStartDate: Date;
+  computedEndDate: Date;
+  startDayOffset: number;
+  durationDays: number;
+  workingDaysCount: number;
+  holidaysEncountered: { date: string; name: string }[];
+  leftPercent: number;
+  widthPercent: number;
+}
+
+export interface TimelineBounds {
+  startDate: Date;
+  endDate: Date;
+  totalDays: number;
+  months: {
+    name: string;
+    year: number;
+    startDate: Date;
+    endDate: Date;
+    widthPercent: number;
+    leftPercent: number;
+    weeks: {
+      weekNum: number;
+      label: string;
+      startDate: Date;
+      widthPercent: number;
+      leftPercent: number;
+    }[];
+  }[];
 }
 
