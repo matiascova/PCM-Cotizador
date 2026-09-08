@@ -388,9 +388,17 @@ export function computeGanttStages(
 
   const minDateObj = new Date(minTime);
   const maxDateObj = new Date(maxTime);
-  const startTimeline = new Date(minDateObj.getFullYear(), minDateObj.getMonth(), 1);
 
+  // Total project duration in weeks
+  const stagesWeeks = stages.reduce((acc, s) => {
+    return acc + (s.durationUnit === 'weeks' ? s.duration : s.duration / (calendar.workingDaysPerWeek || 5));
+  }, 0);
+  const calendarSpanWeeks = Math.ceil((daysBetween(minDateObj, maxDateObj) + 1) / 7);
+  const totalWeeks = Math.max(stagesWeeks, calendarSpanWeeks);
+
+  let startTimeline: Date;
   let endMonthDate: Date;
+
   if (presentationWindow && presentationWindow !== 'auto') {
     const windowMonthsMap: Record<string, number> = {
       '1_month': 1,
@@ -401,9 +409,41 @@ export function computeGanttStages(
       '12_months': 12,
     };
     const numMonths = windowMonthsMap[presentationWindow] || 2;
+    startTimeline = new Date(minDateObj.getFullYear(), minDateObj.getMonth(), 1);
     endMonthDate = new Date(startTimeline.getFullYear(), startTimeline.getMonth() + numMonths, 0);
   } else {
-    endMonthDate = new Date(maxDateObj.getFullYear(), maxDateObj.getMonth() + 1, 0);
+    // Si la gantt dura más de 16 semanas mostrar meses completos.
+    // Si es de 16 o menos semanas mostrar quincenas y un máximo de 8 quincenas.
+    if (totalWeeks <= 16) {
+      // Si la fecha de inicio es después de la primera quincena (día 15),
+      // se inicia en el día 16 para no generar una primera quincena vacía.
+      const startDay = minDateObj.getDate() > 15 ? 16 : 1;
+      startTimeline = new Date(minDateObj.getFullYear(), minDateObj.getMonth(), startDay);
+
+      // Fecha fin tentativa alineada al fin de quincena correspondiente
+      const endDay = maxDateObj.getDate() <= 15
+        ? 15
+        : new Date(maxDateObj.getFullYear(), maxDateObj.getMonth() + 1, 0).getDate();
+      const tentativeEnd = new Date(maxDateObj.getFullYear(), maxDateObj.getMonth(), endDay);
+
+      // Límite máximo de 8 quincenas desde startTimeline
+      // Si startDay == 16: mes 0 (1Q) + 3 meses (6Q) + 1 quincena mes 4 (1Q día 15) = 8 quincenas
+      // Si startDay == 1: 4 meses completos (8 quincenas)
+      const max8QuincenasEnd = startDay === 16
+        ? new Date(startTimeline.getFullYear(), startTimeline.getMonth() + 4, 15)
+        : new Date(startTimeline.getFullYear(), startTimeline.getMonth() + 4, 0);
+
+      if (tentativeEnd <= max8QuincenasEnd) {
+        endMonthDate = tentativeEnd;
+      } else {
+        // En caso de desfasaje por festivos, se asegura cubrir la fecha final
+        endMonthDate = tentativeEnd;
+      }
+    } else {
+      // Más de 16 semanas: escala por meses completos
+      startTimeline = new Date(minDateObj.getFullYear(), minDateObj.getMonth(), 1);
+      endMonthDate = new Date(maxDateObj.getFullYear(), maxDateObj.getMonth() + 1, 0);
+    }
   }
 
   const totalDays = Math.max(1, daysBetween(startTimeline, endMonthDate) + 1);

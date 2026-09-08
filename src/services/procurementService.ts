@@ -155,7 +155,64 @@ export function getStoredSolpeds(): ServicePurchaseRequisition[] {
       localStorage.setItem(SOLPEDS_STORAGE_KEY, JSON.stringify(INITIAL_SOLPEDS));
       return INITIAL_SOLPEDS;
     }
-    return JSON.parse(raw);
+    const solpeds: ServicePurchaseRequisition[] = JSON.parse(raw);
+
+    // Auto-reparar sincronización: Si una posición de SOLPED tiene vínculo a una OC,
+    // pero la OC ya no existe o esa posición específica fue eliminada de la OC en ME22N,
+    // se desvincula de inmediato y vuelve al estado 'approved'.
+    if (typeof window !== 'undefined') {
+      const rawPos = localStorage.getItem(PO_STORAGE_KEY);
+      if (rawPos) {
+        const pos: ServicePurchaseOrder[] = JSON.parse(rawPos);
+        let changed = false;
+        const repaired = solpeds.map(sp => {
+          if (sp.convertedPoId || sp.convertedPoNumber || sp.status === 'converted_to_po') {
+            const matchingPo = pos.find(p => 
+              (sp.convertedPoId && p.id === sp.convertedPoId) || 
+              (sp.convertedPoNumber && p.poNumber === sp.convertedPoNumber) || 
+              (p.solpedNumber === sp.solpedNumber)
+            );
+
+            if (!matchingPo) {
+              // La OC ya no existe
+              changed = true;
+              return {
+                ...sp,
+                convertedPoId: undefined,
+                convertedPoNumber: undefined,
+                status: 'approved' as const
+              };
+            }
+
+            // Si la OC existe y tiene lista de posiciones (items), validar si esta posición sigue activa en la OC
+            if (matchingPo.items && Array.isArray(matchingPo.items) && matchingPo.items.length > 0) {
+              const hasItem = matchingPo.items.some(it => 
+                it.positionNumber === sp.positionNumber || 
+                (it.resourceId && sp.resourceId && it.resourceId === sp.resourceId)
+              );
+              if (!hasItem) {
+                // Esta posición fue eliminada de la OC -> desvincular
+                changed = true;
+                return {
+                  ...sp,
+                  convertedPoId: undefined,
+                  convertedPoNumber: undefined,
+                  status: 'approved' as const
+                };
+              }
+            }
+          }
+          return sp;
+        });
+
+        if (changed) {
+          localStorage.setItem(SOLPEDS_STORAGE_KEY, JSON.stringify(repaired));
+          return repaired;
+        }
+      }
+    }
+
+    return solpeds;
   } catch (e) {
     console.error('Error loading solpeds from storage:', e);
     return INITIAL_SOLPEDS;
@@ -793,6 +850,81 @@ export function deleteSolped(solpedId: string): boolean {
 }
 
 /**
+ * Eliminar / Anular una Orden de Compra SAP (ME22N Borrado / ME28 Rechazo)
+ * Libera automáticamente todas las posiciones asociadas en la SOLPED para que vuelvan a 'approved'
+ */
+export function deletePurchaseOrder(poId: string): boolean {
+  const pos = getStoredPurchaseOrders();
+  const targetPo = pos.find(p => p.id === poId);
+  if (!targetPo) return false;
+
+  // 1. Eliminar de la lista de OCs
+  const remainingPos = pos.filter(p => p.id !== poId);
+  saveStoredPurchaseOrders(remainingPos);
+
+  // 2. Liberar todas las posiciones de SOLPED vinculadas
+  const solpeds = getStoredSolpeds();
+  let solpedsChanged = false;
+  const updatedSolpeds = solpeds.map(s => {
+    if (
+      s.convertedPoId === targetPo.id ||
+      s.convertedPoNumber === targetPo.poNumber ||
+      (s.solpedNumber === targetPo.solpedNumber && s.status === 'converted_to_po')
+    ) {
+      solpedsChanged = true;
+      return {
+        ...s,
+        status: 'approved' as const,
+        convertedPoId: undefined,
+        convertedPoNumber: undefined
+      };
+    }
+    return s;
+  });
+
+  if (solpedsChanged) {
+    saveStoredSolpeds(updatedSolpeds);
+  }
+
+  // 3. Sincronizar cotizaciones en localStorage
+  try {
+    const rawQuotes = localStorage.getItem('sap_quotations_v1_data');
+    if (rawQuotes) {
+      const quotes = JSON.parse(rawQuotes);
+      let quotesChanged = false;
+      const updatedQuotes = quotes.map((q: any) => {
+        if (q.resources && Array.isArray(q.resources)) {
+          let hasMatch = false;
+          const updatedRes = q.resources.map((r: any) => {
+            if (r.purchaseOrderId === targetPo.id || r.purchaseOrderNumber === targetPo.poNumber) {
+              hasMatch = true;
+              return {
+                ...r,
+                purchaseOrderId: undefined,
+                purchaseOrderNumber: undefined
+              };
+            }
+            return r;
+          });
+          if (hasMatch) {
+            quotesChanged = true;
+            return { ...q, resources: updatedRes };
+          }
+        }
+        return q;
+      });
+      if (quotesChanged) {
+        localStorage.setItem('sap_quotations_v1_data', JSON.stringify(updatedQuotes));
+      }
+    }
+  } catch (err) {
+    console.warn('Error syncing quotes after PO deletion:', err);
+  }
+
+  return true;
+}
+
+/**
  * Editar una Orden de Compra SAP (ME22N)
  */
 export function updatePurchaseOrder(
@@ -804,11 +936,23 @@ export function updatePurchaseOrder(
   if (index === -1) return null;
 
   const po = pos[index];
-  const hoursContracted = updates.hoursContracted !== undefined ? Number(updates.hoursContracted) : po.hoursContracted;
-  const hourlyRate = updates.hourlyRate !== undefined ? Number(updates.hourlyRate) : po.hourlyRate;
-  const taxRatePercentage = updates.taxRatePercentage !== undefined ? Number(updates.taxRatePercentage) : po.taxRatePercentage;
-  
-  const netAmount = hoursContracted * hourlyRate;
+  let hoursContracted = updates.hoursContracted !== undefined ? Number(updates.hoursContracted) : po.hoursContracted;
+  let hourlyRate = updates.hourlyRate !== undefined ? Number(updates.hourlyRate) : po.hourlyRate;
+  let netAmount = updates.netAmount !== undefined ? Number(updates.netAmount) : (hoursContracted * hourlyRate);
+
+  if (updates.items && Array.isArray(updates.items)) {
+    if (updates.items.length > 0) {
+      hoursContracted = updates.items.reduce((sum, it) => sum + (Number(it.hours) || 0), 0);
+      netAmount = updates.items.reduce((sum, it) => sum + (Number(it.totalAmount) || ((Number(it.hours) || 0) * (Number(it.hourlyRate) || 0))), 0);
+      hourlyRate = hoursContracted > 0 ? Number((netAmount / hoursContracted).toFixed(2)) : hourlyRate;
+    } else {
+      // Si la lista de posiciones quedó vacía, se anula la OC y se liberan las SOLPEDs
+      deletePurchaseOrder(poId);
+      return null;
+    }
+  }
+
+  const taxRatePercentage = updates.taxRatePercentage !== undefined ? Number(updates.taxRatePercentage) : (po.taxRatePercentage || 19);
   const taxAmount = Math.round((netAmount * taxRatePercentage) / 100);
   const totalAmount = netAmount + taxAmount;
 
@@ -825,6 +969,95 @@ export function updatePurchaseOrder(
 
   pos[index] = updated;
   saveStoredPurchaseOrders(pos);
+
+  // Sincronizar bidireccionalmente las posiciones de la SOLPED:
+  // 1. Las posiciones activas en la OC se actualizan y mantienen el vínculo.
+  // 2. Las posiciones que fueron eliminadas de la OC se liberan (status = 'approved', convertedPo = undefined).
+  if (updates.items && Array.isArray(updates.items) && po.solpedNumber) {
+    const solpeds = getStoredSolpeds();
+    let solpedsChanged = false;
+    const updatedSolpeds = solpeds.map(sp => {
+      if (sp.solpedNumber === po.solpedNumber) {
+        const matchItem = updates.items!.find(it => 
+          it.positionNumber === sp.positionNumber || 
+          (it.resourceId && sp.resourceId && it.resourceId === sp.resourceId)
+        );
+
+        if (matchItem) {
+          // Posición activa en la OC
+          solpedsChanged = true;
+          return {
+            ...sp,
+            status: 'converted_to_po' as const,
+            convertedPoId: updated.id,
+            convertedPoNumber: updated.poNumber,
+            roleTitle: matchItem.roleTitle,
+            hours: matchItem.hours,
+            hourlyRate: matchItem.hourlyRate,
+            totalAmount: matchItem.totalAmount,
+            pepElement: matchItem.pepElement || sp.pepElement,
+            costCenter: matchItem.costCenter || sp.costCenter
+          };
+        } else {
+          // POSICIÓN ELIMINADA DE LA OC -> LIBERAR EN SOLPED
+          solpedsChanged = true;
+          return {
+            ...sp,
+            status: 'approved' as const,
+            convertedPoId: undefined,
+            convertedPoNumber: undefined
+          };
+        }
+      }
+      return sp;
+    });
+
+    if (solpedsChanged) {
+      saveStoredSolpeds(updatedSolpeds);
+    }
+
+    // Sincronizar también las cotizaciones para desvincular recursos eliminados de la OC
+    try {
+      const rawQuotes = localStorage.getItem('sap_quotations_v1_data');
+      if (rawQuotes) {
+        const quotes = JSON.parse(rawQuotes);
+        let quotesChanged = false;
+        const updatedQuotes = quotes.map((q: any) => {
+          if (q.resources && Array.isArray(q.resources)) {
+            let hasMatch = false;
+            const updatedRes = q.resources.map((r: any) => {
+              if (r.solpedNumber === po.solpedNumber) {
+                const itemStillInPo = updates.items!.some(it => 
+                  it.positionNumber === r.solpedPosition || 
+                  (it.resourceId && r.id && it.resourceId === r.id)
+                );
+                if (!itemStillInPo && (r.purchaseOrderId === updated.id || r.purchaseOrderNumber === updated.poNumber)) {
+                  hasMatch = true;
+                  return {
+                    ...r,
+                    purchaseOrderId: undefined,
+                    purchaseOrderNumber: undefined
+                  };
+                }
+              }
+              return r;
+            });
+            if (hasMatch) {
+              quotesChanged = true;
+              return { ...q, resources: updatedRes };
+            }
+          }
+          return q;
+        });
+        if (quotesChanged) {
+          localStorage.setItem('sap_quotations_v1_data', JSON.stringify(updatedQuotes));
+        }
+      }
+    } catch (err) {
+      console.warn('Error syncing quotation resources after po item deletion:', err);
+    }
+  }
+
   return updated;
 }
 

@@ -77,6 +77,26 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
   const computedStages = calculated.stages;
   const bounds = calculated.bounds;
 
+  // Calculate total project duration in weeks
+  const totalWeeks = useMemo(() => {
+    const stagesWeeks = plan.stages.reduce((acc, s) => {
+      const w = s.durationUnit === 'weeks' ? s.duration : s.duration / (plan.settings.calendar?.workingDaysPerWeek || 5);
+      return acc + w;
+    }, 0);
+    if (computedStages.length > 0) {
+      const minT = Math.min(...computedStages.map(s => s.computedStartDate.getTime()));
+      const maxT = Math.max(...computedStages.map(s => s.computedEndDate.getTime()));
+      const spanDays = Math.max(1, Math.round((maxT - minT) / (1000 * 60 * 60 * 24)) + 1);
+      const spanWeeks = Math.ceil(spanDays / 7);
+      return Math.max(stagesWeeks, spanWeeks);
+    }
+    return Math.max(stagesWeeks, Math.ceil(bounds.totalDays / 7));
+  }, [plan.stages, plan.settings.calendar, computedStages, bounds.totalDays]);
+
+  // Si la gantt dura más de 16 semanas: mostrar meses.
+  // Si es de 16 o menos semanas: mostrar quincenas (con máximo 8 quincenas).
+  const isMoreThan16Weeks = totalWeeks > 16;
+
   const currentTheme =
     GANTT_COLOR_THEMES.find((t) => t.id === plan.settings.themeId) ||
     GANTT_COLOR_THEMES[0];
@@ -310,18 +330,26 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
       </div>
 
       {/* Main Roadmap Area */}
-      <div className="w-full flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800">
+      <div className={`w-full flex ${
+        isCompactForPdf
+          ? 'flex-row divide-x divide-y-0'
+          : 'flex-col md:flex-row divide-y md:divide-y-0 md:divide-x'
+      } divide-slate-200 dark:divide-slate-800`}>
         {/* LEFT COLUMN: Stages List */}
-        <div className={`w-full ${isCompactForPdf ? 'md:w-[250px]' : 'md:w-[290px] lg:w-[310px]'} flex-shrink-0 flex flex-col`}>
+        <div className={`${
+          isCompactForPdf
+            ? 'w-[200px] shrink-0'
+            : 'w-full md:w-[280px] lg:w-[300px] flex-shrink-0'
+        } flex flex-col`}>
           {/* Header Row */}
           <div
-            className={`h-12 px-4 flex items-center gap-2 border-b font-medium text-xs ${
+            className={`h-12 px-3 sm:px-4 flex items-center gap-2 border-b font-medium text-xs ${
               isDarkMode
                 ? 'bg-[#102030] border-slate-800 text-slate-200'
                 : 'bg-slate-50/90 border-slate-200 text-slate-800'
             }`}
           >
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <span className="font-bold truncate text-slate-800 dark:text-slate-100 uppercase tracking-wider text-[11px]">
               Fases / Entregables SAP
             </span>
@@ -336,7 +364,9 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
                   key={stage.id}
                   id={`stage-row-left-${stage.id}`}
                   onClick={() => onSelectStage && onSelectStage(stage.id)}
-                  className={`h-11 px-4 flex items-center justify-between gap-2 text-xs cursor-pointer transition-colors ${
+                  className={`${
+                    isCompactForPdf ? 'min-h-[44px] py-1 px-3' : 'h-11 px-4'
+                  } flex items-center justify-between gap-2 text-xs cursor-pointer transition-colors ${
                     isSelected
                       ? isDarkMode
                         ? 'bg-blue-950/50 font-semibold'
@@ -346,7 +376,7 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
                       : 'hover:bg-slate-50'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
                     {stage.isMilestone ? (
                       <div
                         className="w-4.5 h-4.5 rounded flex items-center justify-center flex-shrink-0"
@@ -363,11 +393,14 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
                       />
                     )}
                     <span
-                      className={`truncate ${
+                      className={`text-xs leading-tight ${
+                        isCompactForPdf ? 'line-clamp-2' : 'truncate'
+                      } ${
                         stage.isMilestone
                           ? 'font-bold text-slate-900 dark:text-white'
                           : 'font-medium text-slate-800 dark:text-slate-200'
                       }`}
+                      title={stage.name}
                     >
                       {stage.name}
                     </span>
@@ -403,9 +436,9 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
         </div>
 
         {/* RIGHT COLUMN: Calendar Gantt Timeline */}
-        <div className="flex-1 min-w-0 overflow-x-auto">
-          <div className="min-w-[550px] flex flex-col">
-            {/* Timeline Header (Months & Weeks) */}
+        <div className={`flex-1 min-w-0 ${isCompactForPdf ? 'overflow-hidden' : 'overflow-x-auto'}`}>
+          <div className={`${isCompactForPdf ? 'w-full min-w-0' : (isMoreThan16Weeks ? 'min-w-[620px]' : 'min-w-[480px]')} flex flex-col`}>
+            {/* Timeline Header (Months & Quincenas) */}
             <div
               className={`h-12 border-b flex relative select-none ${
                 isDarkMode
@@ -413,28 +446,40 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
                   : 'bg-slate-50/90 border-slate-200 text-slate-700'
               }`}
             >
-              {bounds.months.map((month, idx) => (
-                <div
-                  key={`${month.year}-${month.name}-${idx}`}
-                  style={{ width: `${month.widthPercent}%` }}
-                  className={`h-full flex flex-col justify-center items-center border-r relative px-1.5 ${
-                    isDarkMode ? 'border-slate-800' : 'border-slate-200'
-                  }`}
-                >
-                  <span className="text-xs font-bold tracking-wide capitalize text-slate-800 dark:text-slate-200">
-                    {month.name} {bounds.months.length > 3 ? `'${String(month.year).slice(-2)}` : ''}
-                  </span>
-                  {plan.settings.showWeekNumbers && (
-                    <div className="w-full flex justify-between text-[9px] text-slate-500 dark:text-slate-400 px-0.5 pt-0.5 border-t border-slate-200/50 dark:border-slate-800">
-                      {month.weeks.map((w, wIdx) => (
-                        <span key={wIdx} className="font-mono">
-                          {w.label}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
+              {bounds.months.map((month, idx) => {
+                const isSecondHalfOnly = month.startDate.getDate() > 15;
+                const isFirstHalfOnly = month.endDate.getDate() <= 15;
+                const hasBothQuincenas = !isSecondHalfOnly && !isFirstHalfOnly;
+
+                return (
+                  <div
+                    key={`${month.year}-${month.name}-${idx}`}
+                    style={{ width: `${month.widthPercent}%` }}
+                    className={`h-full flex flex-col justify-center items-center border-r relative px-1 ${
+                      isDarkMode ? 'border-slate-800' : 'border-slate-200'
+                    }`}
+                  >
+                    <span className={`${isMoreThan16Weeks ? 'text-xs' : 'text-[11px]'} font-bold tracking-tight capitalize text-slate-800 dark:text-slate-200 truncate`}>
+                      {month.name} {bounds.months.length > 2 ? `'${String(month.year).slice(-2)}` : ''}
+                    </span>
+                    {!isMoreThan16Weeks && plan.settings.showWeekNumbers && (
+                      <div className="w-full flex justify-around text-[8px] text-slate-400 dark:text-slate-400 pt-0.5 border-t border-slate-200/50 dark:border-slate-800 font-mono tracking-tighter">
+                        {isSecondHalfOnly ? (
+                          <span>2ªQ</span>
+                        ) : isFirstHalfOnly ? (
+                          <span>1ªQ</span>
+                        ) : (
+                          <>
+                            <span>1ªQ</span>
+                            <span className="opacity-30">|</span>
+                            <span>2ªQ</span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Timeline Stage Rows */}
@@ -442,29 +487,27 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
               {/* Background Grid Vertical Lines */}
               {plan.settings.showGridLines && (
                 <div className="absolute inset-0 pointer-events-none flex z-0">
-                  {bounds.months.map((month, idx) => (
-                    <div
-                      key={`grid-${idx}`}
-                      style={{ width: `${month.widthPercent}%` }}
-                      className={`h-full border-r ${
-                        isDarkMode
-                          ? 'border-slate-800/80 border-dashed'
-                          : 'border-slate-200/80 border-dashed'
-                      } flex`}
-                    >
-                      {plan.settings.showWeekNumbers &&
-                        month.weeks.map((_, wIdx) => (
-                          <div
-                            key={`wgrid-${wIdx}`}
-                            className={`flex-1 h-full border-r ${
-                              isDarkMode
-                                ? 'border-slate-900/60 border-dotted'
-                                : 'border-slate-100 border-dotted'
-                            } last:border-r-0`}
-                          />
-                        ))}
-                    </div>
-                  ))}
+                  {bounds.months.map((month, idx) => {
+                    const isSecondHalfOnly = month.startDate.getDate() > 15;
+                    const isFirstHalfOnly = month.endDate.getDate() <= 15;
+                    const hasBothQuincenas = !isSecondHalfOnly && !isFirstHalfOnly;
+
+                    return (
+                      <div
+                        key={`grid-${idx}`}
+                        style={{ width: `${month.widthPercent}%` }}
+                        className={`h-full border-r ${
+                          isDarkMode
+                            ? 'border-slate-800/80 border-dashed'
+                            : 'border-slate-200/80 border-dashed'
+                        } flex`}
+                      >
+                        {!isMoreThan16Weeks && plan.settings.showWeekNumbers && hasBothQuincenas && (
+                          <div className="flex-1 h-full border-r border-slate-200/40 dark:border-slate-800/40 border-dotted" />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -477,7 +520,9 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
                     key={stage.id}
                     id={`stage-row-right-${stage.id}`}
                     onClick={() => onSelectStage && onSelectStage(stage.id)}
-                    className={`h-11 relative flex items-center cursor-pointer transition-colors z-10 ${
+                    className={`${
+                      isCompactForPdf ? 'min-h-[44px]' : 'h-11'
+                    } relative flex items-center cursor-pointer transition-colors z-10 ${
                       isSelected
                         ? isDarkMode
                           ? 'bg-blue-950/30'
@@ -547,15 +592,20 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
 
                       {/* Beside Label */}
                       {plan.settings.labelPosition !== 'inside' && (() => {
+                        // In compact PDF mode with long timeline, avoid overflowing labels on narrow bars
+                        if (isCompactForPdf && isMoreThan16Weeks && stage.widthPercent < 18) {
+                          return null;
+                        }
+
                         const isNearRightEdge =
-                          stage.leftPercent + stage.widthPercent > 68 &&
-                          stage.leftPercent > 18;
+                          stage.leftPercent + stage.widthPercent > 65 &&
+                          stage.leftPercent > 20;
                         return (
                           <div
                             className={`absolute top-1/2 -translate-y-1/2 whitespace-nowrap flex items-center gap-1.5 select-none pointer-events-none z-20 ${
                               isNearRightEdge
-                                ? 'right-[calc(100%+8px)] justify-end text-right'
-                                : 'left-[calc(100%+8px)] justify-start text-left'
+                                ? 'right-[calc(100%+6px)] justify-end text-right'
+                                : 'left-[calc(100%+6px)] justify-start text-left'
                             }`}
                           >
                             <span
@@ -563,11 +613,11 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
                                 stage.isMilestone
                                   ? 'font-bold text-slate-900 dark:text-white'
                                   : 'font-semibold text-slate-800 dark:text-slate-200'
-                              }`}
+                              } ${isCompactForPdf ? 'max-w-[120px] truncate' : ''}`}
                             >
                               {stage.name}
                             </span>
-                            {plan.settings.showDateBadges && (
+                            {plan.settings.showDateBadges && !isCompactForPdf && (
                               <span
                                 className={`text-[10px] font-normal font-mono ${
                                   isDarkMode ? 'text-slate-400' : 'text-slate-500'

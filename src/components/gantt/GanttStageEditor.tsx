@@ -152,7 +152,7 @@ export const GanttStageEditor: React.FC<GanttStageEditorProps> = ({
 
     const newMilestones: MilestoneItem[] = computedStages.map((cs, idx) => {
       const pct = idx === stagesCount - 1 ? basePct + remainder : basePct;
-      const weekLabel = `Semana ${Math.round(cs.startDayOffset / 7) + 1} - ${
+      const weekLabel = `Sem. ${Math.round(cs.startDayOffset / 7) + 1} - ${
         Math.round((cs.startDayOffset + cs.durationDays) / 7) + 1
       }`;
 

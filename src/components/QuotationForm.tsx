@@ -608,7 +608,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       title: `Fase ${milestones.length + 1}: Nueva Entrega`,
       description: 'Definición de alcance de la fase y entregables.',
       deliverables: 'Documento técnico de entrega y pruebas.',
-      estimatedWeek: `Semana ${milestones.length * 3 + 1} - ${milestones.length * 3 + 3}`,
+      estimatedWeek: `Sem. ${milestones.length * 3 + 1} - ${milestones.length * 3 + 3}`,
       paymentPercentage: 15
     };
     setMilestones([...milestones, newM]);
@@ -2659,7 +2659,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                               type="text"
                               value={m.estimatedWeek}
                               onChange={e => handleUpdateMilestone(m.id, { estimatedWeek: e.target.value })}
-                              placeholder="ej. Semana 3 - 6"
+                              placeholder="ej. Sem. 3 - 6"
                               className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-slate-700"
                             />
                           </div>

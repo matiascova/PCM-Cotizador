@@ -47,6 +47,7 @@ import {
   Quotation, 
   ServicePurchaseRequisition, 
   ServicePurchaseOrder, 
+  ServicePoItem,
   ServiceEntrySheet,
   SolpedStatus,
   PurchaseOrderStatus,
@@ -65,6 +66,7 @@ import {
   convertSolpedToPurchaseOrder, 
   addServiceEntrySheetToPo,
   updatePurchaseOrder,
+  deletePurchaseOrder,
   authorizePurchaseOrder,
   rejectPurchaseOrder,
   getSolpedPositions,
@@ -202,8 +204,14 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
   // Delete SOLPED state
   const [solpedToDelete, setSolpedToDelete] = useState<ServicePurchaseRequisition | null>(null);
 
+  // Delete Purchase Order state
+  const [poToDelete, setPoToDelete] = useState<ServicePurchaseOrder | null>(null);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
+
   // Edit PO state
   const [editingPo, setEditingPo] = useState<ServicePurchaseOrder | null>(null);
+  const [editingPoPositions, setEditingPoPositions] = useState<ServicePoItem[]>([]);
+  const [activePoPosIndex, setActivePoPosIndex] = useState<number>(0);
   const [editPoSupplierName, setEditPoSupplierName] = useState('');
   const [editPoSupplierTaxId, setEditPoSupplierTaxId] = useState('');
   const [editPoSupplierEmail, setEditPoSupplierEmail] = useState('');
@@ -576,6 +584,26 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
     }
   };
 
+  // Confirm Delete / Anular Purchase Order (ME22N Borrado / Anulación)
+  const handleConfirmDeletePo = () => {
+    if (!poToDelete) return;
+    const poNum = poToDelete.poNumber;
+    const solNum = poToDelete.solpedNumber;
+    const success = deletePurchaseOrder(poToDelete.id);
+    if (success) {
+      reloadData();
+      if (editingPo?.id === poToDelete.id) {
+        setEditingPo(null);
+      }
+      if (poForPrint?.id === poToDelete.id) {
+        setPoForPrint(null);
+      }
+      setPoToDelete(null);
+      setSuccessNotice(`Orden de Compra #${poNum} anulada y eliminada. Las posiciones de la SOLPED #${solNum} han quedado liberadas.`);
+      setTimeout(() => setSuccessNotice(null), 5000);
+    }
+  };
+
   // Authorize / Liberar Purchase Order (ME28 / ME29N)
   const handleAuthorizePo = (po: ServicePurchaseOrder) => {
     const updated = authorizePurchaseOrder(po.id, 'Gerencia de Abastecimiento & Compras');
@@ -607,6 +635,121 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
     setEditPoCeco(po.costCenter || '');
     setEditPoDeliveryDate(po.estimatedDeliveryDate || '');
     setEditPoBuyerNotes(po.buyerNotes || '');
+
+    // Resolve ALV positions
+    let items: ServicePoItem[] = [];
+    if (po.items && Array.isArray(po.items) && po.items.length > 0) {
+      items = po.items.map(it => ({ ...it }));
+    } else {
+      const solpedPositions = getSolpedPositions(po.solpedNumber);
+      if (solpedPositions && solpedPositions.length > 0) {
+        items = solpedPositions.map(sp => ({
+          positionNumber: sp.positionNumber,
+          roleTitle: sp.roleTitle,
+          moduleCode: sp.moduleCode,
+          seniority: sp.seniority,
+          hours: sp.hours,
+          hourlyRate: sp.hourlyRate,
+          totalAmount: sp.totalAmount,
+          pepElement: sp.pepElement,
+          costCenter: sp.costCenter,
+          resourceId: sp.resourceId
+        }));
+      } else {
+        items = [{
+          positionNumber: 10,
+          roleTitle: po.roleTitle,
+          moduleCode: po.moduleCode,
+          hours: po.hoursContracted,
+          hourlyRate: po.hourlyRate,
+          totalAmount: po.netAmount,
+          pepElement: po.pepElement,
+          costCenter: po.costCenter
+        }];
+      }
+    }
+    setEditingPoPositions(items);
+    setActivePoPosIndex(0);
+  };
+
+  // PO ALV Position Handlers
+  const handleSelectPoPosition = (index: number) => {
+    setActivePoPosIndex(index);
+  };
+
+  const handleUpdatePoPosition = (index: number, updates: Partial<ServicePoItem>) => {
+    setEditingPoPositions(prev => {
+      const next = [...prev];
+      const current = next[index];
+      if (!current) return prev;
+      const hours = updates.hours !== undefined ? Number(updates.hours) : current.hours;
+      const hourlyRate = updates.hourlyRate !== undefined ? Number(updates.hourlyRate) : current.hourlyRate;
+      const totalAmount = hours * hourlyRate;
+      next[index] = {
+        ...current,
+        ...updates,
+        hours,
+        hourlyRate,
+        totalAmount
+      };
+      return next;
+    });
+  };
+
+  const handleInsertPoPosition = () => {
+    const maxPos = editingPoPositions.reduce((max, p) => Math.max(max, p.positionNumber || 0), 0);
+    const newPosNum = maxPos > 0 ? maxPos + 10 : 10;
+    const defaultRate = editingPo?.hourlyRate || editPoRate || 80;
+    const newItem: ServicePoItem = {
+      positionNumber: newPosNum,
+      roleTitle: 'Consultor SAP Especialista',
+      moduleCode: editingPo?.moduleCode || 'DEV_ABAP',
+      seniority: 'Senior',
+      hours: 40,
+      hourlyRate: defaultRate,
+      totalAmount: 40 * defaultRate,
+      pepElement: editPoPep || `${editingPo?.quotationCode?.replace('COT-', 'PEP-') || 'PEP-SAP'}.${Math.floor(newPosNum / 10)}`,
+      costCenter: editPoCeco || 'CC-10100'
+    };
+    setEditingPoPositions(prev => [...prev, newItem]);
+    setActivePoPosIndex(editingPoPositions.length);
+  };
+
+  const handleDeletePoPosition = (index: number) => {
+    if (editingPoPositions.length <= 1) {
+      // Si solo queda una posición en la OC, ofrecer anular/eliminar la Orden de Compra completa
+      if (editingPo) {
+        setPoToDelete(editingPo);
+      }
+      return;
+    }
+    setEditingPoPositions(prev => prev.filter((_, idx) => idx !== index));
+    setActivePoPosIndex(prev => Math.max(0, Math.min(prev, editingPoPositions.length - 2)));
+  };
+
+  const handleExportPoCsv = (items: ServicePoItem[], filename: string) => {
+    const headers = ['Posicion', 'TipoPosicion', 'TipoImputacion', 'TextoBreve', 'Modulo', 'Seniority', 'Horas', 'TarifaHora', 'TotalNeto', 'ElementoPEP', 'CeCo'];
+    const rows = items.map(p => [
+      String(p.positionNumber).padStart(5, '0'),
+      'D',
+      'P',
+      `"${(p.roleTitle || '').replace(/"/g, '""')}"`,
+      p.moduleCode || '',
+      p.seniority || '',
+      p.hours,
+      p.hourlyRate,
+      p.totalAmount || (p.hours * p.hourlyRate),
+      `"${p.pepElement || ''}"`,
+      `"${p.costCenter || ''}"`
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Save Edit PO (ME22N)
@@ -614,19 +757,35 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
     e.preventDefault();
     if (!editingPo) return;
 
+    if (editingPoPositions.length === 0) {
+      // Si no quedan posiciones, anular la OC
+      handleConfirmDeletePo();
+      return;
+    }
+
+    const totalPoHours = editingPoPositions.reduce((sum, p) => sum + (Number(p.hours) || 0), 0);
+    const totalPoNet = editingPoPositions.reduce((sum, p) => sum + (Number(p.totalAmount) || ((Number(p.hours) || 0) * (Number(p.hourlyRate) || 0))), 0);
+    const avgPoRate = totalPoHours > 0 ? Number((totalPoNet / totalPoHours).toFixed(2)) : editPoRate;
+
+    const consolidatedRoleTitle = editingPoPositions.length === 1
+      ? editingPoPositions[0].roleTitle
+      : `Servicios Especializados (${editingPoPositions.length} especialistas: ${editingPoPositions.map(p => p.roleTitle).join(', ')})`;
+
     const updated = updatePurchaseOrder(editingPo.id, {
       supplierName: editPoSupplierName,
       supplierTaxId: editPoSupplierTaxId,
       supplierEmail: editPoSupplierEmail,
       supplierContact: editPoSupplierContact,
       paymentTerms: editPoPaymentTerms,
-      roleTitle: editPoRoleTitle,
-      hoursContracted: Number(editPoHours) || 0,
-      hourlyRate: Number(editPoRate) || 0,
-      pepElement: editPoPep,
-      costCenter: editPoCeco,
+      roleTitle: editPoRoleTitle || consolidatedRoleTitle,
+      hoursContracted: totalPoHours,
+      hourlyRate: avgPoRate,
+      netAmount: totalPoNet,
+      pepElement: editPoPep || (editingPoPositions[0]?.pepElement || editingPo.pepElement),
+      costCenter: editPoCeco || (editingPoPositions[0]?.costCenter || editingPo.costCenter),
       estimatedDeliveryDate: editPoDeliveryDate,
-      buyerNotes: editPoBuyerNotes
+      buyerNotes: editPoBuyerNotes,
+      items: editingPoPositions
     });
 
     if (updated) {
@@ -635,6 +794,11 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
       if (poForPrint?.id === editingPo.id) {
         setPoForPrint(updated);
       }
+      setSuccessNotice(`Orden de Compra #${updated.poNumber} actualizada exitosamente. Las posiciones en la SOLPED #${updated.solpedNumber} han sido sincronizadas.`);
+      setTimeout(() => setSuccessNotice(null), 4500);
+    } else {
+      reloadData();
+      setEditingPo(null);
     }
   };
 
@@ -864,6 +1028,23 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Success Notification Banner */}
+      {successNotice && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-3.5 flex items-center justify-between gap-3 text-xs font-medium shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{successNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSuccessNotice(null)}
+            className="text-emerald-600 hover:text-emerald-900 text-xs font-bold px-2 py-0.5 rounded cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Tabs & Filters Navigation */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4">
@@ -1526,6 +1707,16 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                                 title="Ver / Imprimir Orden de Compra"
                               >
                                 <Printer className="w-4 h-4" />
+                              </button>
+
+                              {/* Anular / Eliminar Orden de Compra */}
+                              <button
+                                type="button"
+                                onClick={() => setPoToDelete(po)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Anular / Eliminar Orden de Compra y liberar posiciones en SOLPED"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </td>
@@ -3173,37 +3364,125 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
         </div>
       )}
 
-      {/* MODAL 7: EDIT PURCHASE ORDER (ME22N) */}
+      {/* MODAL 6.5: DELETE / ANULAR PURCHASE ORDER (OC) CONFIRMATION */}
+      {poToDelete && (
+        <div 
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setPoToDelete(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 p-6 space-y-4 animate-in zoom-in-95"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Anular / Eliminar Orden de Compra (OC)
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  ¿Confirmas la anulación y eliminación definitiva de la Orden de Compra <strong className="text-slate-800">#{poToDelete.poNumber}</strong>?
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Proveedor:</span>
+                <span className="font-bold text-slate-800">{poToDelete.supplierName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Servicio / Descripción:</span>
+                <span className="font-medium text-slate-800 text-right max-w-[240px] truncate">{poToDelete.roleTitle}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">SOLPED Origen:</span>
+                <span className="font-mono font-bold text-purple-700">#{poToDelete.solpedNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Horas Contratadas:</span>
+                <span className="font-mono font-bold text-slate-800">{poToDelete.hoursContracted} hrs</span>
+              </div>
+              <div className="flex justify-between pt-1.5 border-t border-slate-200">
+                <span className="text-slate-500">Monto Total Contratado:</span>
+                <span className="font-mono font-bold text-rose-700">
+                  {formatCurrency(poToDelete.totalAmount, poToDelete.currency, poToDelete.currencySymbol)}
+                </span>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-emerald-900 bg-emerald-50 border border-emerald-200 p-3 rounded-xl space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-emerald-800">
+                <CheckCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Liberación automática de la SOLPED #{poToDelete.solpedNumber}</span>
+              </div>
+              <p className="text-emerald-700 leading-relaxed">
+                Al eliminar esta Orden de Compra, todas sus posiciones vinculadas en la SOLPED asociada quedarán automáticamente <strong>liberadas</strong> en estado <strong>Aprobada</strong>, listas para ser reasignadas o convertidas en una nueva Orden de Compra.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setPoToDelete(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeletePo}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Confirmar Anulación y Eliminar OC</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 7: EDIT PURCHASE ORDER (ME22N) - ALV MULTI-POSITION GRID (90% SCREEN) */}
       {editingPo && (() => {
-        const net = (Number(editPoHours) || 0) * (Number(editPoRate) || 0);
+        const activePoPos = editingPoPositions[activePoPosIndex] || editingPoPositions[0];
+        const totalPoHours = editingPoPositions.reduce((acc, p) => acc + (Number(p.hours) || 0), 0);
+        const totalPoNet = editingPoPositions.reduce((acc, p) => acc + (Number(p.totalAmount) || ((Number(p.hours) || 0) * (Number(p.hourlyRate) || 0))), 0);
+        const avgPoRate = totalPoHours > 0 ? Number((totalPoNet / totalPoHours).toFixed(2)) : (editingPo.hourlyRate || 0);
         const taxRate = editingPo.taxRatePercentage || 19;
-        const tax = Math.round(net * (taxRate / 100));
-        const total = net + tax;
+        const taxAmount = Math.round((totalPoNet * taxRate) / 100);
+        const totalAmount = totalPoNet + taxAmount;
 
         return (
           <div 
-            className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
+            className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in"
             onClick={() => setEditingPo(null)}
           >
             <div 
-              className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 p-6 space-y-4 my-8"
+              className="bg-white rounded-2xl w-[90vw] max-w-[90vw] max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 p-6 space-y-4 my-auto overflow-hidden animate-in zoom-in-95"
               onClick={e => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-slate-200 pb-3 shrink-0">
                 <div className="flex items-center gap-2.5">
                   <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-purple-700">
                     <Edit2 className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-slate-900">
-                      Modificar Orden de Compra (ME22N) #{editingPo.poNumber}
+                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                      <span>Modificar Orden de Compra (ME22N) #{editingPo.poNumber}</span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 font-bold">
+                        {editingPoPositions.length} {editingPoPositions.length === 1 ? 'Posición ALV' : 'Posiciones ALV'}
+                      </span>
                     </h3>
                     <p className="text-xs text-slate-500">
-                      SOLPED Base: {editingPo.solpedNumber} • Proyecto: {editingPo.quotationCode}
+                      SOLPED Base: {editingPo.solpedNumber} • Proyecto: {editingPo.quotationCode} • Cliente: {editingPo.clientCompanyName || 'Cliente Corporativo'}
                     </p>
                   </div>
                 </div>
                 <button 
+                  type="button"
                   onClick={() => setEditingPo(null)} 
                   className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
                 >
@@ -3211,168 +3490,447 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                 </button>
               </div>
 
-              <form onSubmit={handleSaveEditPo} className="space-y-4 text-xs">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Razón Social Proveedor / Contratista</label>
-                    <input
-                      type="text"
-                      required
-                      value={editPoSupplierName}
-                      onChange={e => setEditPoSupplierName(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-medium focus:bg-white focus:outline-none"
-                    />
+              {/* Form and Scrollable Content Body */}
+              <form onSubmit={handleSaveEditPo} className="flex flex-col flex-1 overflow-hidden space-y-4 text-xs">
+                <div className="space-y-4 overflow-y-auto pr-1 flex-1">
+                  {/* Card 1: Datos de Cabecera (Header Data) */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                      <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5 uppercase tracking-wider">
+                        <Building2 className="w-3.5 h-3.5 text-purple-700" />
+                        Datos de Cabecera de la Orden de Compra (Header Data)
+                      </span>
+                      <span className="text-[11px] text-slate-500 font-mono">
+                        Emisor: {editingPo.companySigner || 'Gerencia de Abastecimiento & Compras'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Columna Izquierda: Proveedor */}
+                      <div className="space-y-2.5">
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Razón Social Proveedor / Contratista</label>
+                          <input
+                            type="text"
+                            required
+                            value={editPoSupplierName}
+                            onChange={e => setEditPoSupplierName(e.target.value)}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 font-medium focus:border-purple-500 focus:outline-none"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="font-bold text-slate-700 block mb-1">RUT / Tax ID</label>
+                            <input
+                              type="text"
+                              value={editPoSupplierTaxId}
+                              onChange={e => setEditPoSupplierTaxId(e.target.value)}
+                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 font-mono focus:border-purple-500 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-bold text-slate-700 block mb-1">Contacto KAM</label>
+                            <input
+                              type="text"
+                              value={editPoSupplierContact}
+                              onChange={e => setEditPoSupplierContact(e.target.value)}
+                              placeholder="Ej: Juan Pérez"
+                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 focus:border-purple-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Email Proveedor / Facturación</label>
+                          <input
+                            type="email"
+                            value={editPoSupplierEmail}
+                            onChange={e => setEditPoSupplierEmail(e.target.value)}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 focus:border-purple-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Columna Derecha: Condiciones y Fechas */}
+                      <div className="space-y-2.5">
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Condiciones de Pago</label>
+                          <input
+                            type="text"
+                            value={editPoPaymentTerms}
+                            onChange={e => setEditPoPaymentTerms(e.target.value)}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 focus:border-purple-500 focus:outline-none"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="font-bold text-slate-700 block mb-1">Elemento PEP Principal</label>
+                            <input
+                              type="text"
+                              value={editPoPep}
+                              onChange={e => setEditPoPep(e.target.value)}
+                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 font-mono focus:border-purple-500 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-bold text-slate-700 block mb-1">Centro de Costo (CeCo)</label>
+                            <input
+                              type="text"
+                              value={editPoCeco}
+                              onChange={e => setEditPoCeco(e.target.value)}
+                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 font-mono focus:border-purple-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Fecha de Entrega Estimada</label>
+                          <input
+                            type="date"
+                            value={editPoDeliveryDate}
+                            onChange={e => setEditPoDeliveryDate(e.target.value)}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 focus:border-purple-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Observaciones del Comprador</label>
+                      <textarea
+                        rows={1}
+                        value={editPoBuyerNotes}
+                        onChange={e => setEditPoBuyerNotes(e.target.value)}
+                        placeholder="Instrucciones o notas adicionales para la emisión y facturación de la Orden de Compra..."
+                        className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 focus:border-purple-500 focus:outline-none resize-none"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">RUT / Identificador Fiscal</label>
-                    <input
-                      type="text"
-                      value={editPoSupplierTaxId}
-                      onChange={e => setEditPoSupplierTaxId(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-mono focus:bg-white focus:outline-none"
-                    />
+
+                  {/* Card 2: Resumen de Posiciones en Formato ALV (SAP ALV Multi-Position Grid) */}
+                  <div className="space-y-2">
+                    {/* ALV Ribbon Toolbar */}
+                    <div className="bg-slate-100/90 border border-slate-200 rounded-xl px-3 py-1.5 flex items-center justify-between gap-2.5 text-xs flex-nowrap overflow-x-auto">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <TableIcon className="w-3.5 h-3.5 text-purple-700" />
+                        <span className="font-bold text-slate-800 text-xs whitespace-nowrap">Resumen de Posiciones ALV (Item Overview)</span>
+                        <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-1.5 py-0.2 rounded-full font-mono">
+                          {editingPoPositions.length}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={handleInsertPoPosition}
+                          className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs whitespace-nowrap"
+                          title="Agregar una nueva posición a la Orden de Compra (incremento de 10 en 10)"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>+ Insertar Posición</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePoPosition(activePoPosIndex)}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors flex items-center gap-1 shadow-2xs whitespace-nowrap bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 cursor-pointer"
+                          title={
+                            editingPoPositions.length <= 1
+                              ? "Eliminar esta última posición anulará la Orden de Compra y liberará la SOLPED"
+                              : "Eliminar posición seleccionada del ALV"
+                          }
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>{editingPoPositions.length <= 1 ? 'Eliminar Posición (Anular OC)' : 'Borrar'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleExportPoCsv(editingPoPositions, `posiciones_oc_${editingPo.poNumber}.csv`)}
+                          className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs whitespace-nowrap"
+                          title="Descargar listado ALV a CSV"
+                        >
+                          <Download className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>CSV</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0 pl-1 border-l border-slate-300">
+                        <Coins className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span className="font-bold text-slate-600 text-xs whitespace-nowrap">Moneda:</span>
+                        <span className="px-2 py-0.5 bg-white border border-slate-200 text-slate-800 rounded-md font-mono font-bold text-xs">
+                          {editingPo.currency} ({editingPo.currencySymbol})
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* ALV Table Grid */}
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase tracking-wider text-[10px] select-none">
+                          <tr>
+                            <th className="p-2.5 text-center w-8">Sel.</th>
+                            <th className="p-2.5">Pos.</th>
+                            <th className="p-2.5 text-center w-8">Sem.</th>
+                            <th className="p-2.5">TP / TI</th>
+                            <th className="p-2.5">Texto Breve / Perfil Servicio</th>
+                            <th className="p-2.5">Módulo / Nivel</th>
+                            <th className="p-2.5 text-right">Cantidad (Horas)</th>
+                            <th className="p-2.5 text-right">Tarifa / Hora</th>
+                            <th className="p-2.5 text-right">Valor Neto</th>
+                            <th className="p-2.5">Elemento PEP</th>
+                            <th className="p-2.5">CeCo</th>
+                            <th className="p-2.5 text-center">Acción</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {editingPoPositions.map((pos, idx) => {
+                            const isSelected = activePoPosIndex === idx;
+                            const posHours = Number(pos.hours) || 0;
+                            const posRate = Number(pos.hourlyRate) || 0;
+                            const posTotal = Number(pos.totalAmount) || (posHours * posRate);
+
+                            return (
+                              <tr
+                                key={idx}
+                                onClick={() => handleSelectPoPosition(idx)}
+                                className={`cursor-pointer transition-colors ${
+                                  isSelected
+                                    ? 'bg-purple-50/90 font-medium border-l-4 border-l-purple-600'
+                                    : 'hover:bg-slate-50'
+                                }`}
+                              >
+                                <td className="p-2.5 text-center">
+                                  <input
+                                    type="radio"
+                                    name="alv_po_modal_selected_position"
+                                    checked={isSelected}
+                                    onChange={() => handleSelectPoPosition(idx)}
+                                    className="text-purple-600 focus:ring-purple-500 cursor-pointer"
+                                  />
+                                </td>
+                                <td className="p-2.5 font-mono font-bold text-purple-700">
+                                  {String(pos.positionNumber || (idx + 1) * 10).padStart(5, '0')}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs" title="Posición liberada para compra" />
+                                </td>
+                                <td className="p-2.5 font-mono text-[10px] text-slate-600">
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200" title="Tipo Posición D (Servicios)">D</span>
+                                  <span className="ml-1 px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200" title="Imputación P (Elemento PEP)">P</span>
+                                </td>
+                                <td className="p-2.5 text-slate-900 font-medium">
+                                  <span className="block font-semibold">{pos.roleTitle}</span>
+                                  <span className="text-[10px] text-slate-400">Servicio de Consultoría y Subcontratación SAP</span>
+                                </td>
+                                <td className="p-2.5 font-mono text-[11px] text-slate-600">
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200">
+                                    {pos.moduleCode || 'DEV_ABAP'}
+                                  </span>
+                                  {pos.seniority && (
+                                    <span className="ml-1 text-[10px] text-slate-500">{pos.seniority}</span>
+                                  )}
+                                </td>
+                                <td className="p-2.5 text-right font-bold font-mono text-slate-800">
+                                  {posHours} HUR
+                                </td>
+                                <td className="p-2.5 text-right font-mono text-slate-600">
+                                  {formatCurrency(posRate, editingPo.currency, editingPo.currencySymbol)}
+                                </td>
+                                <td className="p-2.5 text-right font-bold font-mono text-purple-900">
+                                  {formatCurrency(posTotal, editingPo.currency, editingPo.currencySymbol)}
+                                </td>
+                                <td className="p-2.5 font-mono text-[11px] text-slate-700">
+                                  {pos.pepElement || editPoPep || '-'}
+                                </td>
+                                <td className="p-2.5 font-mono text-[11px] text-slate-500">
+                                  {pos.costCenter || editPoCeco || '-'}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeletePoPosition(idx);
+                                    }}
+                                    className="p-1 rounded transition-colors text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                                    title={
+                                      editingPoPositions.length <= 1
+                                        ? "Eliminar esta última posición anulará la Orden de Compra"
+                                        : "Eliminar esta posición"
+                                    }
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot className="bg-slate-100 font-bold border-t-2 border-slate-300 text-slate-800">
+                          <tr>
+                            <td colSpan={6} className="p-2.5 text-right font-mono text-xs">
+                              LÍNEA DE TOTALES Σ ALV ({editingPoPositions.length} Posiciones):
+                            </td>
+                            <td className="p-2.5 text-right font-mono text-xs text-slate-900">
+                              {totalPoHours.toLocaleString()} HUR
+                            </td>
+                            <td className="p-2.5 text-right font-mono text-xs text-slate-500">
+                              @ {formatCurrency(avgPoRate, editingPo.currency, editingPo.currencySymbol)}
+                            </td>
+                            <td className="p-2.5 text-right font-mono text-xs text-purple-900">
+                              {formatCurrency(totalPoNet, editingPo.currency, editingPo.currencySymbol)}
+                            </td>
+                            <td colSpan={3} />
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Card 3: Formulario de Detalle de Posición Activa Seleccionada */}
+                  {activePoPos && (
+                    <div className="border border-purple-200 bg-purple-50/40 rounded-xl p-4 space-y-3 animate-in fade-in">
+                      <div className="flex items-center justify-between border-b border-purple-200/60 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded font-mono font-bold text-xs bg-purple-600 text-white">
+                            Posición {String(activePoPos.positionNumber || (activePoPosIndex + 1) * 10).padStart(5, '0')}
+                          </span>
+                          <h4 className="font-bold text-slate-800 text-xs flex items-center gap-2">
+                            <span>Detalle de Posición Seleccionada en el ALV</span>
+                            <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px] flex items-center gap-1">
+                              <Edit2 className="w-3 h-3 text-emerald-700" />
+                              <span>Posición Abierta para Edición</span>
+                            </span>
+                          </h4>
+                        </div>
+                        <span className="text-[11px] font-mono font-bold text-purple-900">
+                          Subtotal Posición: {activePoPos.hours} hrs @ {formatCurrency((Number(activePoPos.hours) || 0) * (Number(activePoPos.hourlyRate) || 0), editingPo.currency, editingPo.currencySymbol)}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="sm:col-span-2">
+                          <label className="font-bold text-slate-700 block mb-1">Texto Breve / Denominación del Servicio</label>
+                          <input
+                            type="text"
+                            required
+                            list="sap-specialties-datalist"
+                            value={activePoPos.roleTitle || ''}
+                            onChange={e => handleUpdatePoPosition(activePoPosIndex, { roleTitle: e.target.value })}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 font-medium focus:border-purple-500 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Módulo SAP</label>
+                          <input
+                            type="text"
+                            value={activePoPos.moduleCode || ''}
+                            onChange={e => handleUpdatePoPosition(activePoPosIndex, { moduleCode: e.target.value })}
+                            placeholder="Ej: DEV_ABAP, SAP_MM"
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 font-mono focus:border-purple-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Cantidad de Horas (HUR)</label>
+                          <input
+                            type="number"
+                            required
+                            min="1"
+                            value={activePoPos.hours || 0}
+                            onChange={e => handleUpdatePoPosition(activePoPosIndex, { hours: Number(e.target.value) })}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 font-bold focus:border-purple-500 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Tarifa por Hora</label>
+                          <input
+                            type="number"
+                            required
+                            min="0"
+                            step="any"
+                            value={activePoPos.hourlyRate || 0}
+                            onChange={e => handleUpdatePoPosition(activePoPosIndex, { hourlyRate: Number(e.target.value) })}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 font-mono font-bold focus:border-purple-500 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Elemento PEP Posición</label>
+                          <input
+                            type="text"
+                            value={activePoPos.pepElement || ''}
+                            onChange={e => handleUpdatePoPosition(activePoPosIndex, { pepElement: e.target.value })}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 font-mono focus:border-purple-500 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Centro de Costo (CeCo)</label>
+                          <input
+                            type="text"
+                            value={activePoPos.costCenter || ''}
+                            onChange={e => handleUpdatePoPosition(activePoPosIndex, { costCenter: e.target.value })}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-800 font-mono focus:border-purple-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Card 4: Liquidación y Totales Financieros */}
+                  <div className="bg-purple-50/80 border border-purple-200 rounded-xl p-3.5 space-y-1.5">
+                    <div className="flex justify-between text-purple-900 font-medium">
+                      <span>Subtotal Neto ({editingPoPositions.length} Posiciones ALV • {totalPoHours} HUR):</span>
+                      <span className="font-mono font-bold">{formatCurrency(totalPoNet, editingPo.currency, editingPo.currencySymbol)}</span>
+                    </div>
+                    <div className="flex justify-between text-purple-900/80">
+                      <span>IVA ({taxRate}%):</span>
+                      <span className="font-mono">{formatCurrency(taxAmount, editingPo.currency, editingPo.currencySymbol)}</span>
+                    </div>
+                    <div className="flex justify-between text-purple-950 font-bold pt-1.5 border-t border-purple-200/80 text-sm">
+                      <span>Total Orden de Compra:</span>
+                      <span className="font-mono text-base">{formatCurrency(totalAmount, editingPo.currency, editingPo.currencySymbol)}</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Email Proveedor / Contacto</label>
-                    <input
-                      type="email"
-                      value={editPoSupplierEmail}
-                      onChange={e => setEditPoSupplierEmail(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 focus:bg-white focus:outline-none"
-                    />
+                {/* Footer Action Buttons */}
+                <div className="flex items-center justify-between pt-3 border-t border-slate-200 shrink-0">
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                    <span className="font-mono font-bold text-slate-700">SAP ME22N</span>
+                    <span>•</span>
+                    <span>Modificación de Orden de Compra y Líneas de Posición</span>
                   </div>
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Contacto Comercial / KAM</label>
-                    <input
-                      type="text"
-                      value={editPoSupplierContact}
-                      onChange={e => setEditPoSupplierContact(e.target.value)}
-                      placeholder="Ej: Juan Pérez"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 focus:bg-white focus:outline-none"
-                    />
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Servicio Contratado</label>
-                    <input
-                      type="text"
-                      required
-                      list="sap-specialties-datalist"
-                      value={editPoRoleTitle}
-                      onChange={e => setEditPoRoleTitle(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-medium focus:bg-white focus:outline-none"
-                    />
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (editingPo) {
+                          setPoToDelete(editingPo);
+                        }
+                      }}
+                      className="px-3.5 py-2 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl cursor-pointer flex items-center gap-1.5 transition-colors"
+                      title="Anular y eliminar definitivamente esta Orden de Compra (libera la SOLPED)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Anular OC</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingPo(null)}
+                      className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Guardar Cambios en OC (ME22N)</span>
+                    </button>
                   </div>
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Horas Contratadas</label>
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      value={editPoHours}
-                      onChange={e => setEditPoHours(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-bold focus:bg-white focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Tarifa por Hora</label>
-                    <input
-                      type="number"
-                      required
-                      min="0"
-                      value={editPoRate}
-                      onChange={e => setEditPoRate(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-mono font-bold focus:bg-white focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Elemento PEP</label>
-                    <input
-                      type="text"
-                      value={editPoPep}
-                      onChange={e => setEditPoPep(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-mono focus:bg-white focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Centro de Costo (CeCo)</label>
-                    <input
-                      type="text"
-                      value={editPoCeco}
-                      onChange={e => setEditPoCeco(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-mono focus:bg-white focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Fecha Entrega Estimada</label>
-                    <input
-                      type="date"
-                      value={editPoDeliveryDate}
-                      onChange={e => setEditPoDeliveryDate(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 focus:bg-white focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Condiciones de Pago</label>
-                  <input
-                    type="text"
-                    value={editPoPaymentTerms}
-                    onChange={e => setEditPoPaymentTerms(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 focus:bg-white focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Observaciones del Comprador</label>
-                  <textarea
-                    rows={2}
-                    value={editPoBuyerNotes}
-                    onChange={e => setEditPoBuyerNotes(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 focus:bg-white focus:outline-none"
-                  />
-                </div>
-
-                {/* Calculation Summary */}
-                <div className="bg-purple-50/80 border border-purple-200 rounded-xl p-3 space-y-1">
-                  <div className="flex justify-between text-purple-900 font-medium">
-                    <span>Subtotal Neto:</span>
-                    <span className="font-mono">{formatCurrency(net, editingPo.currency, editingPo.currencySymbol)}</span>
-                  </div>
-                  <div className="flex justify-between text-purple-900/80">
-                    <span>IVA ({taxRate}%):</span>
-                    <span className="font-mono">{formatCurrency(tax, editingPo.currency, editingPo.currencySymbol)}</span>
-                  </div>
-                  <div className="flex justify-between text-purple-950 font-bold pt-1 border-t border-purple-200/60 text-sm">
-                    <span>Total Orden de Compra:</span>
-                    <span className="font-mono">{formatCurrency(total, editingPo.currency, editingPo.currencySymbol)}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => setEditingPo(null)}
-                    className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Guardar Cambios en OC (ME22N)</span>
-                  </button>
                 </div>
               </form>
             </div>

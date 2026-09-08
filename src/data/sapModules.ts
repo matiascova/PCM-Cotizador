@@ -279,35 +279,35 @@ export const SAP_DEFAULT_MILESTONES = [
     title: 'Fase 1: Preparación y Kick-Off (Prepare)',
     description: 'Instalación de gobernanza, alineación metodológica SAP Activate, entrega de requerimientos técnicos y lanzamiento formal.',
     deliverables: 'Acta de Kick-Off, Cronograma Detallado, Validación de Accesos a Sistemas SAP DEV.',
-    estimatedWeek: 'Semana 1 - 2',
+    estimatedWeek: 'Sem. 1 - 2',
     paymentPercentage: 20
   },
   {
     title: 'Fase 2: Diseño y Business Blueprint (Explore)',
     description: 'Talleres de diseño funcional por módulo (MM, LE, PM, QM, HCM), definición de requerimientos y especificaciones RICEFW.',
     deliverables: 'Documentos BBP aprobados por Key Users, Catálogo de Gaps y Especificaciones Funcionales (FDD).',
-    estimatedWeek: 'Semana 3 - 6',
+    estimatedWeek: 'Sem. 3 - 6',
     paymentPercentage: 25
   },
   {
     title: 'Fase 3: Realización, Configuración y Desarrollos (Realize)',
     description: 'Parametrización SPRO de módulos, desarrollos ABAP, CDS Views, pruebas unitarias y pruebas integrales de sistema (SIT).',
     deliverables: 'Ambiente QAS configurado, transportes liberados, desarrollos probados y reporte de pruebas SIT.',
-    estimatedWeek: 'Semana 7 - 12',
+    estimatedWeek: 'Sem. 7 - 12',
     paymentPercentage: 25
   },
   {
     title: 'Fase 4: Preparación Final y Pruebas UAT (Deploy)',
     description: 'Pruebas de Aceptación de Usuario (UAT), capacitación a usuarios clave, plan de cutover y migración de datos maestros.',
     deliverables: 'Acta de Aceptación UAT firmada, Materiales de Capacitación y Plan de Puesta en Producción (Cutover).',
-    estimatedWeek: 'Semana 13 - 15',
+    estimatedWeek: 'Sem. 13 - 15',
     paymentPercentage: 15
   },
   {
     title: 'Fase 5: Go-Live y Soporte Hipercare (Run)',
     description: 'Pase a producción oficial, acompañamiento in situ/remoto a la operación real, resolución de incidencias prioritarias y cierre.',
     deliverables: 'Acta de Salida en Vivo (Go-Live), Informe de Cierre de Hipercare y Traspaso formal a Soporte AMS.',
-    estimatedWeek: 'Semana 16 - 18',
+    estimatedWeek: 'Sem. 16 - 18',
     paymentPercentage: 15
   }
 ];

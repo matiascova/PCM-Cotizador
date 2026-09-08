@@ -114,6 +114,12 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
     }).format(val);
   };
 
+  // Helper to abbreviate Semana/Semanas to Sem.
+  const formatEstimatedWeek = (val?: string) => {
+    if (!val) return '';
+    return val.replace(/Semanas?\s*/gi, 'Sem. ');
+  };
+
   // Automated milestones if none exist
   const milestonesList = quote.milestones && quote.milestones.length > 0 ? quote.milestones : [
     {
@@ -129,7 +135,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
       title: 'Avance de Desarrollo & Navegabilidad',
       description: 'Configuración de módulos principales, maestros y flujos navegables.',
       deliverables: 'Ambiente QA disponible para pruebas preliminares.',
-      estimatedWeek: 'Semana 3',
+      estimatedWeek: 'Sem. 3',
       paymentPercentage: 30
     },
     {
@@ -137,15 +143,33 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
       title: 'Cierre, Pruebas de Aceptación & Entrega',
       description: 'Pruebas integrales, paso a producción y transferencia de conocimientos.',
       deliverables: 'Puesta en marcha, manual de usuario y acta de entrega formal.',
-      estimatedWeek: 'Semana 4',
+      estimatedWeek: 'Sem. 4',
       paymentPercentage: 30
     }
   ];
 
+  const interiorPageClass = `dossier-page dossier-page-interior relative ${
+    isPrintStaging
+      ? 'w-[800px] h-[1131px] min-h-[1131px] max-h-[1131px] overflow-hidden'
+      : 'min-h-[1050px] w-full rounded-2xl shadow-xl'
+  } bg-white text-slate-900 border border-slate-200 p-8 sm:p-12 pl-12 sm:pl-20 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page flex flex-col justify-between`;
+
+  const coverPageClass = `dossier-page dossier-page-cover relative ${
+    isPrintStaging
+      ? 'w-[800px] h-[1131px] min-h-[1131px] max-h-[1131px] overflow-hidden'
+      : 'min-h-[1050px] w-full rounded-2xl shadow-2xl'
+  } bg-slate-950 text-white border border-slate-800 flex flex-col justify-between p-8 sm:p-14 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page`;
+
+  const backCoverPageClass = `dossier-page dossier-page-backcover relative ${
+    isPrintStaging
+      ? 'w-[800px] h-[1131px] min-h-[1131px] max-h-[1131px] overflow-hidden'
+      : 'min-h-[900px] w-full rounded-2xl shadow-2xl'
+  } bg-slate-950 text-white border border-slate-800 flex flex-col justify-between p-8 sm:p-14 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page`;
+
   return (
     <div 
       id="dossier-editorial-container" 
-      className={`dossier-print-wrapper ${isPrintStaging ? 'w-[1024px]' : 'max-w-5xl mx-auto space-y-12 print:space-y-0 print:max-w-none'}`}
+      className={`dossier-print-wrapper ${isPrintStaging ? 'w-[800px] mx-auto space-y-0' : 'max-w-5xl mx-auto space-y-12 print:space-y-0 print:max-w-none'}`}
     >
       
       {/* ------------------------------------------------------------- */}
@@ -154,7 +178,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
       <div 
         id="dossier-page-1"
         data-theme="dark"
-        className="dossier-page dossier-page-cover relative min-h-[1050px] w-full bg-slate-950 text-white rounded-2xl overflow-hidden shadow-2xl border border-slate-800 flex flex-col justify-between p-8 sm:p-14 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page"
+        className={coverPageClass}
       >
         {/* Background Image with Dark Gradient Overlay */}
         <div 
@@ -304,7 +328,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
       <div 
         id="dossier-page-2"
         data-theme="light"
-        className="dossier-page dossier-page-interior relative min-h-[1050px] w-full bg-white text-slate-900 rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-12 pl-12 sm:pl-20 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page flex flex-col justify-between"
+        className={interiorPageClass}
       >
         {/* Margen Lateral Izquierdo (Barcode + Vertical Text) */}
         <div className="absolute left-0 top-0 bottom-0 w-10 sm:w-12 border-r border-slate-200 bg-slate-50 flex flex-col items-center justify-between py-6">
@@ -411,7 +435,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
       <div 
         id="dossier-page-3"
         data-theme="light"
-        className="dossier-page dossier-page-interior relative min-h-[1050px] w-full bg-white text-slate-900 rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-12 pl-12 sm:pl-20 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page flex flex-col justify-between"
+        className={interiorPageClass}
       >
         {/* Margen Lateral Izquierdo */}
         <div className="absolute left-0 top-0 bottom-0 w-10 sm:w-12 border-r border-slate-200 bg-slate-50 flex flex-col items-center justify-between py-6">
@@ -437,17 +461,17 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
             </span>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-black text-slate-950">
+          <div className="flex items-center justify-between gap-4 mb-6">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-2xl sm:text-3xl font-black text-slate-950 leading-tight">
                 Distribución de Inversión
               </h2>
-              <p className="text-xs text-slate-600 mt-0.5">
+              <p className="text-xs text-slate-600 mt-1 font-medium leading-normal">
                 Precio cerrado {formatUfNumber(totalInUf)} UF (${formatClpNumber(totalInClp)} CLP).
               </p>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 px-4 py-2.5 rounded-xl text-right shadow-xs">
+            <div className="bg-blue-50 border border-blue-200 px-4 py-2.5 rounded-xl text-right shadow-xs shrink-0">
               <span className="text-[10px] uppercase font-bold text-blue-800 block">Total Proyecto</span>
               <span className="text-lg font-black text-blue-900 font-mono">
                 {formatUfNumber(totalInUf)} UF
@@ -478,10 +502,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
                   {quote.resources.map((res, i) => (
                     <tr key={res.id || i} className="hover:bg-slate-50/60">
                       <td className="p-3 font-semibold text-slate-900">
-                        <span className="px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-200 rounded text-[10px] font-bold">
-                          {res.moduleCode}
-                        </span>
-                        <span className="ml-2">{res.moduleName}</span>
+                        <span>{res.moduleName}</span>
                       </td>
                       <td className="p-3 font-medium text-slate-800">{res.roleTitle}</td>
                       <td className="p-3 text-slate-600">{res.seniority}</td>
@@ -567,7 +588,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
       <div 
         id="dossier-page-4"
         data-theme="light"
-        className="dossier-page dossier-page-interior relative min-h-[1050px] w-full bg-white text-slate-900 rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-12 pl-12 sm:pl-20 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page flex flex-col justify-between"
+        className={interiorPageClass}
       >
         {/* Margen Lateral Izquierdo */}
         <div className="absolute left-0 top-0 bottom-0 w-10 sm:w-12 border-r border-slate-200 bg-slate-50 flex flex-col items-center justify-between py-6">
@@ -612,7 +633,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
 
             <div className="border border-slate-200 bg-slate-50 rounded-xl p-3.5 shadow-xs">
               <span className="text-xs font-mono font-bold text-slate-700 block mb-1">02 · Construcción</span>
-              <p className="font-semibold text-slate-900">Semanas 1–2</p>
+              <p className="font-semibold text-slate-900">Sem. 1–2</p>
               <p className="text-[11px] text-slate-600 mt-1">
                 Parametrización de módulos, integraciones y flujos funcionales.
               </p>
@@ -620,7 +641,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
 
             <div className="border border-slate-200 bg-slate-50 rounded-xl p-3.5 shadow-xs">
               <span className="text-xs font-mono font-bold text-slate-700 block mb-1">03 · Demo & Pruebas</span>
-              <p className="font-semibold text-slate-900">Semana 3</p>
+              <p className="font-semibold text-slate-900">Sem. 3</p>
               <p className="text-[11px] text-slate-600 mt-1">
                 Ambiente QA navegable, validación con usuarios clave y demo de avance.
               </p>
@@ -628,7 +649,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
 
             <div className="border border-slate-200 bg-slate-50 rounded-xl p-3.5 shadow-xs">
               <span className="text-xs font-mono font-bold text-slate-700 block mb-1">04 · Cierre & Go-Live</span>
-              <p className="font-semibold text-slate-900">Semana 4</p>
+              <p className="font-semibold text-slate-900">Sem. 4</p>
               <p className="text-[11px] text-slate-600 mt-1">
                 Paso a productivo, inicio de hipercare ({quote.guaranteeHypercareDays} días) y acta de entrega.
               </p>
@@ -642,9 +663,9 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
                 <tr>
                   <th className="p-3">Hito / Entregable</th>
                   <th className="p-3">Entregable Verificable</th>
-                  <th className="p-3">Momento</th>
-                  <th className="p-3 text-right">% Facturación</th>
-                  <th className="p-3 text-right">Monto Estimado</th>
+                  <th className="p-3 whitespace-nowrap">Momento</th>
+                  <th className="p-3 text-right whitespace-nowrap">% Facturación</th>
+                  <th className="p-3 text-right whitespace-nowrap">Monto Estimado</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
@@ -652,9 +673,11 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
                   <tr key={m.id || i} className="hover:bg-slate-50/50">
                     <td className="p-3 font-bold text-slate-900">{m.title}</td>
                     <td className="p-3 text-slate-600">{m.deliverables || m.description}</td>
-                    <td className="p-3 text-slate-600 font-mono text-[11px]">{m.estimatedWeek}</td>
-                    <td className="p-3 text-right font-bold text-slate-900">{m.paymentPercentage}%</td>
-                    <td className="p-3 text-right font-mono font-bold text-blue-900">
+                    <td className="p-3 text-slate-600 font-mono text-[11px] whitespace-nowrap font-medium">
+                      {formatEstimatedWeek(m.estimatedWeek)}
+                    </td>
+                    <td className="p-3 text-right font-bold text-slate-900 whitespace-nowrap">{m.paymentPercentage}%</td>
+                    <td className="p-3 text-right font-mono font-bold text-blue-900 whitespace-nowrap">
                       {formatUfNumber(totalInUf * (m.paymentPercentage / 100))} UF
                     </td>
                   </tr>
@@ -689,7 +712,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
       <div 
         id="dossier-page-5"
         data-theme="light"
-        className="dossier-page dossier-page-interior relative min-h-[1050px] w-full bg-white text-slate-900 rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-12 pl-12 sm:pl-20 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page flex flex-col justify-between"
+        className={interiorPageClass}
       >
         {/* Margen Lateral Izquierdo */}
         <div className="absolute left-0 top-0 bottom-0 w-10 sm:w-12 border-r border-slate-200 bg-slate-50 flex flex-col items-center justify-between py-6">
@@ -788,7 +811,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
       <div 
         id="dossier-page-6"
         data-theme="light"
-        className="dossier-page dossier-page-interior relative min-h-[1050px] w-full bg-white text-slate-900 rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-12 pl-12 sm:pl-20 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page flex flex-col justify-between"
+        className={interiorPageClass}
       >
         {/* Margen Lateral Izquierdo */}
         <div className="absolute left-0 top-0 bottom-0 w-10 sm:w-12 border-r border-slate-200 bg-slate-50 flex flex-col items-center justify-between py-6">
@@ -879,7 +902,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
       <div 
         id="dossier-page-7"
         data-theme="light"
-        className="dossier-page dossier-page-interior relative min-h-[1050px] w-full bg-white text-slate-900 rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-12 pl-12 sm:pl-20 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page flex flex-col justify-between"
+        className={interiorPageClass}
       >
         {/* Margen Lateral Izquierdo */}
         <div className="absolute left-0 top-0 bottom-0 w-10 sm:w-12 border-r border-slate-200 bg-slate-50 flex flex-col items-center justify-between py-6">
@@ -1059,7 +1082,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
       <div 
         id="dossier-page-8"
         data-theme="dark"
-        className="dossier-page dossier-page-backcover relative min-h-[900px] w-full bg-slate-950 text-white rounded-2xl overflow-hidden shadow-2xl border border-slate-800 flex flex-col justify-between p-8 sm:p-14 print:rounded-none print:border-none print:shadow-none print:h-[297mm] print:min-h-[297mm] print:max-h-[297mm] print:break-after-page"
+        className={backCoverPageClass}
       >
         <div 
           className="absolute inset-0 bg-cover bg-center opacity-30 mix-blend-luminosity pointer-events-none"

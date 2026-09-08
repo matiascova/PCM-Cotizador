@@ -245,7 +245,7 @@ export const ProjectExecutionHandover: React.FC<ProjectExecutionHandoverProps> =
                         {m.deliverables || m.description}
                       </td>
                       <td className="py-2 px-3 text-slate-600 whitespace-nowrap">
-                        {m.estimatedWeek}
+                        {m.estimatedWeek ? m.estimatedWeek.replace(/Semanas?\s*/gi, 'Sem. ') : '-'}
                       </td>
                       <td className="py-2 px-3 text-right font-bold text-slate-800">
                         {m.paymentPercentage}%

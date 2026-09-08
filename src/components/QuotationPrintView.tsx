@@ -159,7 +159,7 @@ export const QuotationPrintView: React.FC<QuotationPrintViewProps> = ({
       title: 'Avance de Desarrollo & Navegabilidad',
       description: 'Configuración de módulos principales, maestros y flujos navegables.',
       deliverables: 'Ambiente QA disponible para pruebas preliminares.',
-      estimatedWeek: 'Semana 3',
+      estimatedWeek: 'Sem. 3',
       paymentPercentage: 30
     },
     {
@@ -167,7 +167,7 @@ export const QuotationPrintView: React.FC<QuotationPrintViewProps> = ({
       title: 'Cierre, Pruebas de Aceptación & Entrega',
       description: 'Pruebas integrales, paso a producción y transferencia de conocimientos.',
       deliverables: 'Puesta en marcha, manual de usuario y acta de entrega formal.',
-      estimatedWeek: 'Semana 4',
+      estimatedWeek: 'Sem. 4',
       paymentPercentage: 30
     }
   ];

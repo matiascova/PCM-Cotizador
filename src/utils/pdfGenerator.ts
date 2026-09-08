@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { toJpeg } from 'html-to-image';
+import { toJpeg, getFontEmbedCSS } from 'html-to-image';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Quotation, CompanyProfile } from '../types';
@@ -522,7 +522,7 @@ export async function downloadDossierPDF(
       stagingContainer.style.position = 'fixed';
       stagingContainer.style.left = '-10000px';
       stagingContainer.style.top = '0';
-      stagingContainer.style.width = '1024px';
+      stagingContainer.style.width = '800px';
       stagingContainer.style.zIndex = '-9999';
       stagingContainer.style.backgroundColor = '#020617';
       document.body.appendChild(stagingContainer);
@@ -536,13 +536,28 @@ export async function downloadDossierPDF(
         })
       );
 
-      // Allow DOM to settle and images to begin decoding
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      // Wait for document fonts and DOM layout reflow to stabilize
+      if (document.fonts) {
+        try {
+          await document.fonts.ready;
+        } catch {
+          // ignore font ready errors
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
       pageElements = Array.from(stagingContainer.querySelectorAll<HTMLElement>('.dossier-page'));
     }
 
     if (pageElements.length === 0) {
       throw new Error('No se encontraron páginas del dossier para generar el PDF');
+    }
+
+    // Embed fonts if available to avoid rasterization font fallbacks and distortion
+    let fontEmbedCSS: string | undefined;
+    try {
+      fontEmbedCSS = await getFontEmbedCSS(stagingContainer || document.body);
+    } catch {
+      // ignore font embed extraction errors if restricted
     }
 
     const pdf = new jsPDF({
@@ -567,7 +582,7 @@ export async function downloadDossierPDF(
         quality: 0.95,
         pixelRatio: 2,
         backgroundColor: isDark ? '#020617' : '#ffffff',
-        skipFonts: true,
+        fontEmbedCSS,
         cacheBust: false,
         imagePlaceholder: 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"/>'
       });

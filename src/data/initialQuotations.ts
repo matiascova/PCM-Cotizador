@@ -143,7 +143,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Fase Prepare: Kick-Off & Definición Metodológica',
         description: 'Alineación del equipo de proyecto, entrega de cronograma y validación de accesos.',
         deliverables: 'Acta de Kick-Off firmada y Landscape DEV habilitado.',
-        estimatedWeek: 'Semana 1 - 2',
+        estimatedWeek: 'Sem. 1 - 2',
         paymentPercentage: 20
       },
       {
@@ -151,7 +151,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Business Blueprint (BBP) Logístico & Mantenimiento',
         description: 'Talleres de diseño funcional de MM, LE, PM, QM y especificaciones técnicas.',
         deliverables: 'Documentos BBP aprobados por Key Users y Comité de Proyecto.',
-        estimatedWeek: 'Semana 3 - 7',
+        estimatedWeek: 'Sem. 3 - 7',
         paymentPercentage: 25
       },
       {
@@ -159,7 +159,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Configuración SPRO & Desarrollos ABAP Finalizados',
         description: 'Parametrización en DEV, pruebas unitarias y pruebas integradas SIT en QAS.',
         deliverables: 'Ambiente QAS verificado con transportes y reporte SIT firmado.',
-        estimatedWeek: 'Semana 8 - 14',
+        estimatedWeek: 'Sem. 8 - 14',
         paymentPercentage: 25
       },
       {
@@ -167,7 +167,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Pruebas de Aceptación UAT & Capacitación',
         description: 'Ejecución de escenarios E2E por usuarios clave y plan de cutover.',
         deliverables: 'Acta de Aceptación UAT firmada y manuales operativos.',
-        estimatedWeek: 'Semana 15 - 17',
+        estimatedWeek: 'Sem. 15 - 17',
         paymentPercentage: 15
       },
       {
@@ -175,7 +175,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Puesta en Producción (Go-Live) & Hipercare',
         description: 'Salida en vivo y acompañamiento de 30 días post-productivo.',
         deliverables: 'Acta formal de Go-Live y reporte de cierre de Hipercare.',
-        estimatedWeek: 'Semana 18 - 22',
+        estimatedWeek: 'Sem. 18 - 22',
         paymentPercentage: 15
       }
     ],
@@ -324,7 +324,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Alineación Inicial & Blueprint de Nómina',
         description: 'Definición de conceptos de pago, convenios y catálogo organizativo.',
         deliverables: 'Documento BBP de Nómina y Estructura Organizativa firmado.',
-        estimatedWeek: 'Semana 1 - 4',
+        estimatedWeek: 'Sem. 1 - 4',
         paymentPercentage: 30
       },
       {
@@ -332,7 +332,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Parametrización del Motor de Cálculo & ABAP',
         description: 'Configuración en DEV y pruebas unitarias de cálculo neto.',
         deliverables: 'Motor de cálculo probado con 50 casos testigo de prueba.',
-        estimatedWeek: 'Semana 5 - 10',
+        estimatedWeek: 'Sem. 5 - 10',
         paymentPercentage: 30
       },
       {
@@ -340,7 +340,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Pruebas en Paralelo (2 Meses) & UAT',
         description: 'Comparativo peso a peso entre sistema actual y SAP HCM.',
         deliverables: 'Reporte de cuadratura 100% de nóminas paralelas y acta UAT.',
-        estimatedWeek: 'Semana 11 - 14',
+        estimatedWeek: 'Sem. 11 - 14',
         paymentPercentage: 25
       },
       {
@@ -348,7 +348,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Primera Nómina Productiva & Hipercare',
         description: 'Procesamiento de primera nómina oficial en SAP y soporte.',
         deliverables: 'Acta de Go-Live y soporte mensual garantizado.',
-        estimatedWeek: 'Semana 15 - 16',
+        estimatedWeek: 'Sem. 15 - 16',
         paymentPercentage: 15
       }
     ],
@@ -578,7 +578,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Diagnóstico Inicial & Ejecución Readiness Check',
         description: 'Recolección de datos y análisis de compatibilidad de mandantes.',
         deliverables: 'Reporte consolidado de Readiness Check y catálogo de hallazgos.',
-        estimatedWeek: 'Semana 1 - 4',
+        estimatedWeek: 'Sem. 1 - 4',
         paymentPercentage: 50
       },
       {
@@ -586,7 +586,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Entrega de Roadmap de Conversión & Plan Maestro',
         description: 'Plan detallado de fases, sizing recomendado y presupuesto de migración.',
         deliverables: 'Documento Maestro de Roadmap S/4HANA y presentación ejecutiva.',
-        estimatedWeek: 'Semana 5 - 8',
+        estimatedWeek: 'Sem. 5 - 8',
         paymentPercentage: 50
       }
     ],
@@ -688,7 +688,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Fase Prepare: Kick-Off & Levantamiento Inicial',
         description: 'Reunión de alineación, revisión de accesos y cronograma de hitos.',
         deliverables: 'Acta de Kick-Off aprobada y matriz de riesgos de proyecto.',
-        estimatedWeek: 'Semana 1 - 2',
+        estimatedWeek: 'Sem. 1 - 2',
         paymentPercentage: 20
       },
       {
@@ -696,7 +696,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Fase Explore: Business Blueprint Aprobado',
         description: 'Talleres de diseño funcional de nómina y tiempos por faena.',
         deliverables: 'Documento BBP firmado por Key Users de Arauco.',
-        estimatedWeek: 'Semana 3 - 6',
+        estimatedWeek: 'Sem. 3 - 6',
         paymentPercentage: 30
       },
       {
@@ -704,7 +704,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Fase Realize: Parametrización & Pruebas Unitarias',
         description: 'Configuración en ambiente DEV y transportes a ambiente de calidad.',
         deliverables: 'Ambiente QAS operativo y catálogo de pruebas unitarias concluidas.',
-        estimatedWeek: 'Semana 7 - 11',
+        estimatedWeek: 'Sem. 7 - 11',
         paymentPercentage: 30
       },
       {
@@ -712,7 +712,7 @@ export const INITIAL_QUOTATIONS: Quotation[] = [
         title: 'Fase Deploy & Run: Aceptación UAT, Go-Live & Hipercare',
         description: 'Pruebas integrales de usuario, salida a producción y 30 días de hipercare.',
         deliverables: 'Acta de Go-Live formal firmada y traspaso a soporte AMS.',
-        estimatedWeek: 'Semana 12 - 16',
+        estimatedWeek: 'Sem. 12 - 16',
         paymentPercentage: 20
       }
     ],
