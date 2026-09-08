@@ -29,6 +29,8 @@ import { Quotation, QuotationStatus, QuotationStatusLog } from '../types';
 import { calculateQuotationTotals, formatCurrency, getStatusBadge } from '../utils/calculations';
 import { downloadDossierPDF, downloadQuotationPDF } from '../utils/pdfGenerator';
 import { convertUfToClp, convertClpToUf, formatUfValue } from '../services/bcentralService';
+import { GanttModule } from './gantt/GanttModule';
+import { createDefaultGanttPlanForQuotation } from '../data/ganttTemplates';
 
 interface QuotationDetailModalProps {
   quote: Quotation;
@@ -47,7 +49,7 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
   onOpenHandover,
   onOpenPrintView
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'resources' | 'milestones' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'resources' | 'milestones' | 'gantt' | 'history'>('overview');
   const [showStatusChanger, setShowStatusChanger] = useState(false);
   const [newStatus, setNewStatus] = useState<QuotationStatus>(quote.status);
   const [statusNote, setStatusNote] = useState('');
@@ -332,6 +334,18 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
           >
             <Calendar className="w-4 h-4" />
             <span>Hitos & Facturación ({quote.milestones.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('gantt')}
+            className={`py-3 border-b-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
+              activeTab === 'gantt'
+                ? 'border-blue-600 text-blue-700 font-bold'
+                : 'border-transparent hover:text-slate-900'
+            }`}
+          >
+            <Clock className="w-4 h-4 text-blue-600" />
+            <span>Carta Gantt SAP 📊</span>
           </button>
 
           <button
@@ -804,6 +818,35 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
                   </table>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB: EXECUTIVE GANTT TIMELINE */}
+          {activeTab === 'gantt' && (
+            <div className="space-y-4">
+              <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-3 text-xs text-blue-900 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>
+                    <strong>Carta Gantt Ejecutiva:</strong> Planifica fases, dependencias y cálculo dinámico de días hábiles. Los cambios se guardan en la cotización y se integran automáticamente en el Dossier PDF.
+                  </span>
+                </div>
+              </div>
+
+              <GanttModule
+                plan={quote.ganttPlan || createDefaultGanttPlanForQuotation(
+                  quote.project.projectTitle,
+                  quote.project.estimatedStartDate,
+                  quote.client.country
+                )}
+                onChangePlan={(updatedPlan) => {
+                  onUpdateQuote({
+                    ...quote,
+                    ganttPlan: updatedPlan,
+                    updatedAt: new Date().toISOString().replace('T', ' ').slice(0, 16)
+                  });
+                }}
+              />
             </div>
           )}
 

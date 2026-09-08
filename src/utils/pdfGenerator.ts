@@ -7,6 +7,7 @@ import { Quotation, CompanyProfile } from '../types';
 import { calculateQuotationTotals, formatCurrency } from './calculations';
 import { convertUfToClp } from '../services/bcentralService';
 import { DossierEditorialView } from '../components/DossierEditorialView';
+import { createDefaultGanttPlanForQuotation } from '../data/ganttTemplates';
 
 export function generateQuotationPDF(quote: Quotation): jsPDF {
   const doc = new jsPDF({
@@ -305,7 +306,13 @@ export function generateQuotationPDF(quote: Quotation): jsPDF {
   currentY = doc.lastAutoTable.finalY + 7;
 
   // 3.1 Cronograma Ejecutivo de Fases Gantt SAP
-  if (quote.ganttPlan && quote.ganttPlan.stages && quote.ganttPlan.stages.length > 0) {
+  const effectiveGanttPlan = quote.ganttPlan || createDefaultGanttPlanForQuotation(
+    quote.project.projectTitle,
+    quote.project.estimatedStartDate,
+    quote.client.country
+  );
+
+  if (effectiveGanttPlan && effectiveGanttPlan.stages && effectiveGanttPlan.stages.length > 0) {
     if (currentY > pageHeight - 50) {
       doc.addPage();
       currentY = 20;
@@ -316,7 +323,7 @@ export function generateQuotationPDF(quote: Quotation): jsPDF {
     doc.text('3.1 CRONOGRAMA EJECUTIVO DE FASES SAP (CARTA GANTT)', margin, currentY);
     currentY += 3;
 
-    const ganttTableData = quote.ganttPlan.stages.map((stg, i) => [
+    const ganttTableData = effectiveGanttPlan.stages.map((stg, i) => [
       `#${i + 1} ${stg.name}${stg.isMilestone ? ' ★ [Hito Crítico]' : ''}`,
       `${stg.duration} ${stg.durationUnit === 'weeks' ? 'semanas' : 'días hábiles'}`,
       stg.startType === 'sequential' ? 'Consecutivo (Auto)' : stg.startType === 'custom_date' ? 'Fecha fija' : 'Desfase',

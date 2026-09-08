@@ -49,8 +49,11 @@ import {
   ClientSignerInfo,
   Professional,
   ClientMasterItem,
-  ResourceStaffingType
+  ResourceStaffingType,
+  ProjectPlan
 } from '../types';
+import { GanttModule } from './gantt/GanttModule';
+import { createDefaultGanttPlanForQuotation } from '../data/ganttTemplates';
 import { syncSolpedsForQuotation, alignQuotationResourceSolpeds } from '../services/procurementService';
 import { 
   SAP_CATALOG_MODULES, 
@@ -330,6 +333,16 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       ...m
     }))
   );
+
+  // Gantt Plan & Step 4 View Mode
+  const [ganttPlan, setGanttPlan] = useState<ProjectPlan>(
+    initialQuote?.ganttPlan || createDefaultGanttPlanForQuotation(
+      initialQuote?.project?.projectTitle || 'Implementación SAP S/4HANA',
+      initialQuote?.project?.estimatedStartDate || new Date().toISOString().slice(0, 10),
+      initialQuote?.client?.country || 'Chile'
+    )
+  );
+  const [milestoneSubTab, setMilestoneSubTab] = useState<'milestones' | 'gantt'>('milestones');
 
   // Financials
   const [discountPercentage, setDiscountPercentage] = useState(initialQuote?.discountPercentage || 0);
@@ -864,6 +877,9 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       executionAssignedPM: initialQuote?.executionAssignedPM,
       actualProjectCode: initialQuote?.actualProjectCode,
 
+      // Planificación Ejecutiva Gantt SAP
+      ganttPlan,
+
       // Dossier Editorial (Estilo Bridev) Inputs
       currentSituationHoy,
       builtSolutionQuedaConstruido,
@@ -921,7 +937,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
             { step: 1, label: '1. Cliente & Oferta', icon: Building2 },
             { step: 2, label: '2. Alcance & Metodología', icon: Layers },
             { step: 3, label: `3. Recursos SAP (${resources.length})`, icon: Users },
-            { step: 4, label: `4. Hitos (${milestones.length})`, icon: Calendar },
+            { step: 4, label: `4. Hitos & Carta Gantt (${milestones.length})`, icon: Calendar },
             { step: 5, label: '5. Precios & Cierre', icon: DollarSign },
             { step: 6, label: '6. Dossier Bridev & Legal ✨', icon: Sparkles }
           ].map(s => {
@@ -2518,116 +2534,169 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
             </div>
           )}
 
-          {/* STEP 4: MILESTONES & DELIVERABLES */}
+          {/* STEP 4: MILESTONES & DELIVERABLES + GANTT TIMELINE */}
           {activeStep === 4 && (
             <div className="space-y-6 animate-in fade-in duration-150">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Plan de Hitos, Entregables y Esquema de Pagos
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Estructura de avance conforme a las fases metodológicas de consultoría SAP
-                  </p>
-                </div>
+              {/* Subtabs for Step 4 */}
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+                <button
+                  type="button"
+                  onClick={() => setMilestoneSubTab('milestones')}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+                    milestoneSubTab === 'milestones'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Hitos de Pago & Facturación ({milestones.length})</span>
+                </button>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleResetToStandardMilestones}
-                    className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
-                  >
-                    Cargar 5 Fases SAP Activate Estándar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAddMilestone}
-                    className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Agregar Hito</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setMilestoneSubTab('gantt')}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+                    milestoneSubTab === 'gantt'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Carta Gantt Ejecutiva SAP 📊 ({ganttPlan.stages.length} fases)</span>
+                </button>
               </div>
 
-              {/* Total percentage alert */}
-              <div className={`p-3 rounded-lg border text-xs flex items-center justify-between ${
-                totalMilestonePercentage === 100 
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
-                  : 'bg-amber-50 text-amber-800 border-amber-200'
-              }`}>
-                <span>Suma de porcentajes de pago por hito: <strong>{totalMilestonePercentage}%</strong></span>
-                {totalMilestonePercentage === 100 ? (
-                  <span className="flex items-center gap-1 font-semibold">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Cuadre perfecto (100%)
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 font-semibold">
-                    <AlertCircle className="w-4 h-4 text-amber-600" /> Debe sumar exactamente 100%
-                  </span>
-                )}
-              </div>
-
-              {/* Milestones list */}
-              <div className="space-y-3">
-                {milestones.map((m, idx) => (
-                  <div key={m.id} className="p-3.5 bg-white border border-slate-200 rounded-xl space-y-2 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-slate-500">Hito #{idx + 1}</span>
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1">
-                          <label className="text-[11px] font-semibold text-slate-600">% Facturación:</label>
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={m.paymentPercentage}
-                            onChange={e => handleUpdateMilestone(m.id, { paymentPercentage: Number(e.target.value) || 0 })}
-                            className="w-16 px-2 py-1 bg-white border border-slate-300 rounded text-right font-bold text-slate-900"
-                          />
-                          <span className="font-bold text-slate-700">%</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteMilestone(m.id)}
-                          className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+              {milestoneSubTab === 'milestones' ? (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Plan de Hitos, Entregables y Esquema de Pagos
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        Estructura de avance conforme a las fases metodológicas de consultoría SAP
+                      </p>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <div className="sm:col-span-2">
-                        <input
-                          type="text"
-                          value={m.title}
-                          onChange={e => handleUpdateMilestone(m.id, { title: e.target.value })}
-                          placeholder="Nombre del Hito / Fase"
-                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded font-semibold text-slate-800"
-                        />
-                      </div>
-                      <div>
-                        <input
-                          type="text"
-                          value={m.estimatedWeek}
-                          onChange={e => handleUpdateMilestone(m.id, { estimatedWeek: e.target.value })}
-                          placeholder="ej. Semana 3 - 6"
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleResetToStandardMilestones}
+                        className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                      >
+                        Cargar 5 Fases SAP Activate Estándar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAddMilestone}
+                        className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Agregar Hito</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Total percentage alert */}
+                  <div className={`p-3 rounded-lg border text-xs flex items-center justify-between ${
+                    totalMilestonePercentage === 100 
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                      : 'bg-amber-50 text-amber-800 border-amber-200'
+                  }`}>
+                    <span>Suma de porcentajes de pago por hito: <strong>{totalMilestonePercentage}%</strong></span>
+                    {totalMilestonePercentage === 100 ? (
+                      <span className="flex items-center gap-1 font-semibold">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Cuadre perfecto (100%)
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 font-semibold">
+                        <AlertCircle className="w-4 h-4 text-amber-600" /> Debe sumar exactamente 100%
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Milestones list */}
+                  <div className="space-y-3">
+                    {milestones.map((m, idx) => (
+                      <div key={m.id} className="p-3.5 bg-white border border-slate-200 rounded-xl space-y-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-slate-500">Hito #{idx + 1}</span>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1">
+                              <label className="text-[11px] font-semibold text-slate-600">% Facturación:</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={m.paymentPercentage}
+                                onChange={e => handleUpdateMilestone(m.id, { paymentPercentage: Number(e.target.value) || 0 })}
+                                className="w-16 px-2 py-1 bg-white border border-slate-300 rounded text-right font-bold text-slate-900"
+                              />
+                              <span className="font-bold text-slate-700">%</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMilestone(m.id)}
+                              className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div className="sm:col-span-2">
+                            <input
+                              type="text"
+                              value={m.title}
+                              onChange={e => handleUpdateMilestone(m.id, { title: e.target.value })}
+                              placeholder="Nombre del Hito / Fase"
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded font-semibold text-slate-800"
+                            />
+                          </div>
+                          <div>
+                            <input
+                              type="text"
+                              value={m.estimatedWeek}
+                              onChange={e => handleUpdateMilestone(m.id, { estimatedWeek: e.target.value })}
+                              placeholder="ej. Semana 3 - 6"
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-slate-700"
+                            />
+                          </div>
+                        </div>
+
+                        <textarea
+                          rows={2}
+                          value={m.deliverables}
+                          onChange={e => handleUpdateMilestone(m.id, { deliverables: e.target.value })}
+                          placeholder="Entregables contractuales: ej. Documento BBP firmado, especificaciones funcionales FDD, acta SIT..."
                           className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-slate-700"
                         />
                       </div>
-                    </div>
-
-                    <textarea
-                      rows={2}
-                      value={m.deliverables}
-                      onChange={e => handleUpdateMilestone(m.id, { deliverables: e.target.value })}
-                      placeholder="Entregables contractuales: ej. Documento BBP firmado, especificaciones funcionales FDD, acta SIT..."
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-slate-700"
-                    />
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 text-xs text-blue-900 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span>
+                        <strong>Cronograma Ejecutivo de Fases SAP:</strong> Define las fases, dependencias y días hábiles. Puedes usar el botón <em>"Sincronizar con Hitos de Pago"</em> en el editor para generar automáticamente los hitos contractuales basados en este cronograma.
+                      </span>
+                    </div>
+                  </div>
+
+                  <GanttModule
+                    plan={ganttPlan}
+                    onChangePlan={setGanttPlan}
+                    onSyncMilestones={(newMilestones) => {
+                      setMilestones(newMilestones);
+                      setMilestoneSubTab('milestones');
+                    }}
+                  />
+                </div>
+              )}
             </div>
           )}
 
