@@ -18,14 +18,15 @@ import {
   ChevronRight,
   ChevronLeft,
   Globe2,
-  ShoppingBag
+  ShoppingBag,
+  Truck
 } from 'lucide-react';
 import { Quotation } from '../types';
 import { calculateQuotationTotals, formatCurrency } from '../utils/calculations';
 
 interface SidebarProps {
-  activeNav: 'builder' | 'history' | 'clients' | 'resources' | 'procurement';
-  setActiveNav: (nav: 'builder' | 'history' | 'clients' | 'resources' | 'procurement') => void;
+  activeNav: 'builder' | 'history' | 'clients' | 'resources' | 'procurement' | 'suppliers';
+  setActiveNav: (nav: 'builder' | 'history' | 'clients' | 'resources' | 'procurement' | 'suppliers') => void;
   quotations: Quotation[];
   onNewQuotation: () => void;
   isOpenMobile?: boolean;
@@ -34,6 +35,7 @@ interface SidebarProps {
   onToggleCollapse: () => void;
   professionalsCount?: number;
   procurementCount?: number;
+  suppliersCount?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -46,7 +48,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed,
   onToggleCollapse,
   professionalsCount,
-  procurementCount
+  procurementCount,
+  suppliersCount
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const hoverTimeoutRef = useRef<number | null>(null);
@@ -69,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const handleNavClick = (id: 'builder' | 'history' | 'clients' | 'resources' | 'procurement') => {
+  const handleNavClick = (id: 'builder' | 'history' | 'clients' | 'resources' | 'procurement' | 'suppliers') => {
     setActiveNav(id);
     if (isCollapsed) {
       setIsHovered(false);
@@ -80,7 +83,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const navItems: { 
-    id: 'builder' | 'history' | 'clients' | 'resources' | 'procurement'; 
+    id: 'builder' | 'history' | 'clients' | 'resources' | 'procurement' | 'suppliers'; 
     label: string; 
     icon: React.ReactNode; 
     count?: number 
@@ -114,6 +117,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Compras & SOLPEDs', 
       icon: <ShoppingBag className="w-5 h-5 shrink-0" />,
       count: procurementCount
+    },
+    { 
+      id: 'suppliers', 
+      label: 'Maestro Proveedores', 
+      icon: <Truck className="w-5 h-5 shrink-0" />,
+      count: suppliersCount
     }
   ];
 

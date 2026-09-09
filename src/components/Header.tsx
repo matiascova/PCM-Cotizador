@@ -49,7 +49,9 @@ export const Header: React.FC<HeaderProps> = ({
       case 'resources':
         return { subtitle: 'Resource Catalog', title: 'Matriz de Perfiles y Tarifas SAP' };
       case 'procurement':
-        return { subtitle: 'SAP MM Procurement', title: 'Compras, SOLPEDs (ME51N) & Órdenes de Compra (ME21N)' };
+        return { subtitle: 'SAP MM Procurement', title: 'Compras, SOLPEDs & Órdenes de Compra' };
+      case 'suppliers':
+        return { subtitle: 'SAP MM Vendor Master', title: 'Maestro de Proveedores & Subcontratistas' };
       case 'builder':
       default:
         return { subtitle: 'Proposal Builder', title: 'Sistema de Cotizaciones & Staffing SAP' };

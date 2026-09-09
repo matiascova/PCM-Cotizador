@@ -19,7 +19,9 @@ import { ProjectExecutionHandover } from './components/ProjectExecutionHandover'
 import { QuotationPrintView } from './components/QuotationPrintView';
 import { BancoCentralModal } from './components/BancoCentralModal';
 import { ProcurementView } from './components/ProcurementView';
+import { SuppliersView } from './components/SuppliersView';
 import { getStoredSolpeds } from './services/procurementService';
+import { getStoredSuppliers } from './data/suppliersMaster';
 import { 
   SAP_CATALOG_MODULES, 
   SapCatalogModule, 
@@ -96,7 +98,7 @@ export default function App() {
   }, []);
 
   // Navigation state matching Geometric Balance sidebar
-  const [activeNav, setActiveNav] = useState<'builder' | 'history' | 'clients' | 'resources' | 'procurement'>('builder');
+  const [activeNav, setActiveNav] = useState<'builder' | 'history' | 'clients' | 'resources' | 'procurement' | 'suppliers'>('builder');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Collapsible Curtain Sidebar (default true to maximize screen space)
@@ -491,6 +493,7 @@ export default function App() {
         onToggleCollapse={handleToggleSidebarCollapse}
         professionalsCount={professionals.length}
         procurementCount={getStoredSolpeds().length}
+        suppliersCount={getStoredSuppliers().length}
       />
 
       {/* Main Content Area */}
@@ -543,6 +546,10 @@ export default function App() {
                 onSelectQuotation={quote => setSelectedQuote(quote)}
                 onOpenNewQuotation={handleNewQuotation}
               />
+            </div>
+          ) : activeNav === 'suppliers' ? (
+            <div className="w-[90vw] max-w-[90vw] mx-auto">
+              <SuppliersView />
             </div>
           ) : (
             /* Builder & History: Quotation List and Pipeline */

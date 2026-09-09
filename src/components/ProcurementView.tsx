@@ -83,6 +83,7 @@ import { formatCurrency } from '../utils/calculations';
 import { CURRENCIES, convertCurrency, getBenchmarkRate } from '../utils/currencies';
 import { getCachedBancoCentralData } from '../services/bcentralService';
 import { getStoredModules, SapCatalogModule, getModuleBenchmarkRate } from '../data/sapModules';
+import { getStoredSuppliers } from '../data/suppliersMaster';
 
 export interface SapSpecialtyPreset {
   id: string;
@@ -2222,9 +2223,39 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                        Proveedor / Subcontratista Sugerido *
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[10px] font-bold text-slate-600">
+                          Proveedor / Subcontratista *
+                        </label>
+                        <select
+                          className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 max-w-[140px] truncate cursor-pointer"
+                          value=""
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (!val) return;
+                            const storedSupps = getStoredSuppliers();
+                            const found = storedSupps.find(s => s.id === val);
+                            if (found) {
+                              if (found.isBlocked) {
+                                alert(`Atención SAP XK05: El proveedor "${found.legalName}" se encuentra BLOQUEADO en el Maestro de Proveedores por el motivo:\n\n"${found.blockingReason || 'Bloqueo administrativo'}"\n\nNo se recomienda cursar SOLPEDs ni pedidos a proveedores bloqueados.`);
+                              }
+                              setNewSolpedSupplier(found.legalName);
+                              setNewSolpedSupplierTaxId(found.taxId);
+                              if (found.billingCurrency) {
+                                setNewSolpedCurrency(found.billingCurrency);
+                              }
+                            }
+                            e.target.value = '';
+                          }}
+                        >
+                          <option value="">▼ Desde Maestro...</option>
+                          {getStoredSuppliers().map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.isBlocked ? '⛔ [BLOQUEADO] ' : ''}{s.legalName} ({s.taxId}) - {s.billingCurrency}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       <input
                         type="text"
                         value={newSolpedSupplier}

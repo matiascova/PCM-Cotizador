@@ -579,3 +579,88 @@ export interface TimelineBounds {
   }[];
 }
 
+// ==========================================
+// MAESTRO DE PROVEEDORES (SAP MM VENDOR MASTER - SII CHILE & INTERNACIONAL)
+// ==========================================
+
+export type SupplierStatus = 'active' | 'blocked' | 'under_review' | 'inactive';
+
+export type SupplierTaxCategory = 
+  | 'Primera Categoría'        // Empresas SpA, S.A., Ltda., EIRL (Afectas a Impuesto de Primera Categoría)
+  | 'Segunda Categoría'        // Personas Naturales / Profesionales (Boletas de Honorarios)
+  | 'No Domiciliado';          // Proveedor Extranjero (Invoice Internacional, sujeto o exento de Impuesto Adicional Art. 59 LIR)
+
+export type SupplierDteType = 
+  | 'Factura Electrónica Afecta (19%)'
+  | 'Factura Electrónica Exenta de IVA'
+  | 'Boleta de Honorarios Electrónica'
+  | 'Invoice Internacional / Factura Extranjera';
+
+export interface SupplierBankAccount {
+  bankName: string;
+  accountType: 'Cuenta Corriente' | 'Cuenta Vista / RUT' | 'Checking' | 'Savings' | 'Wire Internacional';
+  accountNumber: string;
+  swiftCode?: string;
+  iban?: string;
+  routingNumber?: string;
+  holderName?: string;
+  holderTaxId?: string;
+}
+
+export interface SupplierMasterItem {
+  id: string;
+  vendorCode: string;              // Código SAP Acreedor / Proveedor (ej. "LIFNR-10020" o "PRV-001")
+  
+  // Identificación Legal & Tributaria (SII Chile / Extranjero)
+  taxId: string;                   // RUT chileno (ej. "76.432.190-8") o Tax ID extranjero (RFC, EIN, CIF, etc.)
+  legalName: string;               // Razón Social registrada ante el SII u organismo fiscal
+  fantasyName?: string;            // Nombre de Fantasía o Comercial
+  siiActivityCode?: string;        // Código Actividad Económica SII (ej. "620100", "620200")
+  businessActivity?: string;       // Giro comercial oficial ante el SII
+  taxCategory: SupplierTaxCategory;
+  dteType: SupplierDteType;
+  dteBillingEmail?: string;        // Casilla oficial de intercambio DTE del SII
+  siiStatusValid?: boolean;        // Verificación tributaria SII (Sin inconcurrencias, iniciación de actividades vigente)
+  
+  // Domicilio Fiscal
+  address: string;                 // Calle y número
+  officeOrSuite?: string;          // Oficina / Depto / Piso
+  comuna: string;                  // Comuna (Chile) o Municipio / Condado
+  city: string;                    // Ciudad
+  regionOrState?: string;          // Región (ej. "Región Metropolitana", "Valparaíso", "CDMX", "California")
+  country: string;                 // País (Chile, México, España, Estados Unidos, Colombia, Argentina, etc.)
+  isForeign: boolean;              // true si no es domiciliado en Chile
+  
+  // Atributos de Moneda de Cobro & Tarifas
+  billingCurrency: SupportedCurrency;   // Moneda principal en la que cobra (UF, CLP, USD, EUR, MXN, etc.)
+  acceptedCurrencies: SupportedCurrency[]; // Monedas que acepta para órdenes y facturación
+  defaultHourlyRate?: number;           // Tarifa por hora referencial
+  hourlyRateCurrency?: SupportedCurrency;
+  paymentTerms: string;                 // ej. "30 días fecha factura", "Contado contra HES aprobada", "60 días"
+  bankAccount?: SupplierBankAccount;
+  
+  // Capacidades Técnicas & Servicios
+  specialties: string[];           // ej. ["SAP ABAP", "SAP FICO", "SAP MM", "S/4HANA Migration", "SAP BTP"]
+  seniorityLevels: SeniorityLevel[]; // ej. ["Senior", "Lead / Arquitecto"]
+  website?: string;
+  
+  // Datos de Contacto Comercial y Operativo
+  contactName: string;
+  contactRole: string;
+  contactEmail: string;
+  contactPhone: string;
+  
+  // Estado & Bloqueo (Transacción SAP XK05 - Bloqueo de Compras)
+  status: SupplierStatus;
+  isBlocked: boolean;
+  blockingReason?: string;         // Motivo del bloqueo registrado
+  blockedAt?: string;              // Fecha y hora del bloqueo
+  blockedBy?: string;              // Usuario o rol que ejecutó el bloqueo
+  
+  // Evaluación y Auditoría
+  rating?: number;                 // 1 a 5 estrellas
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
