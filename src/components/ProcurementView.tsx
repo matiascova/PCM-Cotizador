@@ -1203,46 +1203,51 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
           </div>
         </div>
 
-        {/* Procurement KPI Ribbon - Compacto y de alta densidad */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 pt-2 border-t border-slate-800/80 text-xs">
-          <div className="bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] text-slate-400 font-medium block">Total SOLPEDs</span>
-              <span className="text-[9px] text-blue-300 font-mono">ME51N</span>
-            </div>
-            <span className="text-sm font-bold text-white font-mono">{solpeds.length}</span>
+        {/* Procurement KPI Ribbon - Indicadores Claros y con Tipografía Agrandada */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-2 border-t border-slate-800/80">
+          <div className="bg-slate-800/80 border border-slate-700/70 rounded-xl px-3 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between gap-2 shadow-xs hover:border-slate-600 transition-colors">
+            <span className="text-xs sm:text-[13px] font-semibold text-slate-200 leading-snug">
+              Total solp
+            </span>
+            <span className="text-base sm:text-lg lg:text-xl font-bold text-white font-mono shrink-0">
+              {solpeds.length}
+            </span>
           </div>
 
-          <div className="bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] text-slate-400 font-medium block">Pendientes Liberar</span>
-              <span className="text-[9px] text-amber-400 font-mono">ME54N</span>
-            </div>
-            <span className="text-sm font-bold text-amber-400 font-mono">{pendingReleaseCount}</span>
+          <div className="bg-slate-800/80 border border-slate-700/70 rounded-xl px-3 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between gap-2 shadow-xs hover:border-slate-600 transition-colors">
+            <span className="text-xs sm:text-[13px] font-semibold text-slate-200 leading-snug">
+              Pendiente de liberar
+            </span>
+            <span className="text-base sm:text-lg lg:text-xl font-bold text-amber-400 font-mono shrink-0">
+              {pendingReleaseCount}
+            </span>
           </div>
 
-          <div className="bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] text-slate-400 font-medium block">Aprobadas / Por Comprar</span>
-              <span className="text-[9px] text-emerald-300 font-mono">Listas OC</span>
-            </div>
-            <span className="text-sm font-bold text-emerald-400 font-mono">{approvedSolpedsCount}</span>
+          <div className="bg-slate-800/80 border border-slate-700/70 rounded-xl px-3 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between gap-2 shadow-xs hover:border-slate-600 transition-colors">
+            <span className="text-xs sm:text-[13px] font-semibold text-slate-200 leading-snug">
+              Aprobadas por compra
+            </span>
+            <span className="text-base sm:text-lg lg:text-xl font-bold text-emerald-400 font-mono shrink-0">
+              {approvedSolpedsCount}
+            </span>
           </div>
 
-          <div className="bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] text-slate-400 font-medium block">Órdenes de Compra</span>
-              <span className="text-[9px] text-purple-300 font-mono">ME21N</span>
-            </div>
-            <span className="text-sm font-bold text-purple-400 font-mono">{activePosCount}</span>
+          <div className="bg-slate-800/80 border border-slate-700/70 rounded-xl px-3 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between gap-2 shadow-xs hover:border-slate-600 transition-colors">
+            <span className="text-xs sm:text-[13px] font-semibold text-slate-200 leading-snug">
+              Órdenes de compra
+            </span>
+            <span className="text-base sm:text-lg lg:text-xl font-bold text-purple-400 font-mono shrink-0">
+              {activePosCount}
+            </span>
           </div>
 
-          <div className="bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-1.5 flex items-center justify-between col-span-2 sm:col-span-1">
-            <div>
-              <span className="text-[10px] text-slate-400 font-medium block">Horas Subcontratadas</span>
-              <span className="text-[9px] text-slate-400 font-mono">Esfuerzo</span>
-            </div>
-            <span className="text-sm font-bold text-blue-400 font-mono">{totalSubcontractedHours} hrs</span>
+          <div className="bg-slate-800/80 border border-slate-700/70 rounded-xl px-3 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between gap-2 col-span-2 sm:col-span-1 shadow-xs hover:border-slate-600 transition-colors">
+            <span className="text-xs sm:text-[13px] font-semibold text-slate-200 leading-snug">
+              Horas subcontratadas
+            </span>
+            <span className="text-base sm:text-lg lg:text-xl font-bold text-blue-400 font-mono shrink-0">
+              {totalSubcontractedHours} hrs
+            </span>
           </div>
         </div>
       </div>
