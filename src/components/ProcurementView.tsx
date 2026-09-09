@@ -41,7 +41,9 @@ import {
   FileSpreadsheet,
   Coins,
   RefreshCw,
-  Zap
+  Zap,
+  Copy,
+  FilePlus
 } from 'lucide-react';
 import { 
   Quotation, 
@@ -52,7 +54,8 @@ import {
   SolpedStatus,
   PurchaseOrderStatus,
   SupportedCurrency,
-  SeniorityLevel
+  SeniorityLevel,
+  SapModuleCode
 } from '../types';
 import { 
   getStoredSolpeds, 
@@ -72,7 +75,9 @@ import {
   getSolpedPositions,
   saveSolpedPositions,
   addPositionToSolped,
-  deleteSolpedPosition
+  deleteSolpedPosition,
+  createNewSolped,
+  CreateSolpedPositionItem
 } from '../services/procurementService';
 import { formatCurrency } from '../utils/calculations';
 import { CURRENCIES, convertCurrency, getBenchmarkRate } from '../utils/currencies';
@@ -237,6 +242,212 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
   const [hesDescription, setHesDescription] = useState('Certificación de horas de consultoría y entregables del periodo.');
   const [hesConsultantName, setHesConsultantName] = useState('');
   const [hesApprover, setHesApprover] = useState('Jefe de Proyecto SAP / PMO');
+
+  // Estados para Crear Nueva SOLPED (Transacción SAP ME51N)
+  const [isCreatingSolped, setIsCreatingSolped] = useState(false);
+  const [createMode, setCreateMode] = useState<'blank' | 'reference'>('blank');
+  const [selectedReferenceSolpedNum, setSelectedReferenceSolpedNum] = useState<string>('');
+  
+  // Datos de cabecera para la nueva SOLPED
+  const [newSolpedSupplier, setNewSolpedSupplier] = useState('Partner Subcontratista SAP');
+  const [newSolpedSupplierTaxId, setNewSolpedSupplierTaxId] = useState('');
+  const [newSolpedQuotationId, setNewSolpedQuotationId] = useState('');
+  const [newSolpedQuotationCode, setNewSolpedQuotationCode] = useState('');
+  const [newSolpedClientName, setNewSolpedClientName] = useState('');
+  const [newSolpedProjectTitle, setNewSolpedProjectTitle] = useState('');
+  const [newSolpedPep, setNewSolpedPep] = useState('');
+  const [newSolpedCeco, setNewSolpedCeco] = useState('CC-10100');
+  const [newSolpedCurrency, setNewSolpedCurrency] = useState<SupportedCurrency>('UF');
+  const [newSolpedDocType, setNewSolpedDocType] = useState<'NB' | 'ZSRV'>('NB');
+  const [newSolpedNotes, setNewSolpedNotes] = useState('');
+
+  // Posiciones de la nueva SOLPED
+  const [newSolpedPositions, setNewSolpedPositions] = useState<CreateSolpedPositionItem[]>([]);
+
+  // Función para aplicar referencia de una SOLPED existente
+  const applyReferenceSolped = (refNum: string) => {
+    setSelectedReferenceSolpedNum(refNum);
+    const refPositions = solpeds.filter(s => s.solpedNumber === refNum);
+    if (refPositions.length > 0) {
+      const base = refPositions[0];
+      setNewSolpedSupplier(base.supplierName || 'Partner Subcontratista SAP');
+      setNewSolpedSupplierTaxId(base.supplierTaxId || '');
+      setNewSolpedQuotationId(base.quotationId || '');
+      setNewSolpedQuotationCode(base.quotationCode || '');
+      setNewSolpedClientName(base.clientCompanyName || '');
+      setNewSolpedProjectTitle(base.projectTitle || '');
+      setNewSolpedPep(base.pepElement || '');
+      setNewSolpedCeco(base.costCenter || 'CC-10100');
+      setNewSolpedCurrency(base.currency || 'UF');
+      setNewSolpedDocType(base.documentType || 'NB');
+      setNewSolpedNotes(`Creada con referencia a SOLPED #${refNum} (ME51N)`);
+      
+      setNewSolpedPositions(refPositions.map(p => ({
+        roleTitle: p.roleTitle,
+        moduleCode: p.moduleCode,
+        moduleName: p.moduleName,
+        seniority: p.seniority,
+        hours: p.hours,
+        hourlyRate: p.hourlyRate,
+        currency: p.currency,
+        currencySymbol: p.currencySymbol,
+        pepElement: p.pepElement,
+        costCenter: p.costCenter || base.costCenter || 'CC-10100'
+      })));
+    }
+  };
+
+  // Abrir modal de creación de SOLPED
+  const handleOpenCreateSolped = (initialMode: 'blank' | 'reference' = 'blank', referenceNum?: string) => {
+    setCreateMode(initialMode);
+    const uniqueSolpedsList: ServicePurchaseRequisition[] = Array.from(new Map<string, ServicePurchaseRequisition>(solpeds.map(s => [s.solpedNumber, s])).values());
+    const refNum = referenceNum || (uniqueSolpedsList.length > 0 ? uniqueSolpedsList[0].solpedNumber : '');
+
+    if (initialMode === 'reference' && refNum) {
+      applyReferenceSolped(refNum);
+    } else {
+      setSelectedReferenceSolpedNum('');
+      setNewSolpedSupplier('Partner Subcontratista SAP');
+      setNewSolpedSupplierTaxId('');
+      
+      if (quotations && quotations.length > 0) {
+        const firstQ = quotations[0];
+        setNewSolpedQuotationId(firstQ.id);
+        setNewSolpedQuotationCode(firstQ.quotationCode || firstQ.id);
+        setNewSolpedClientName(firstQ.clientCompanyName || '');
+        setNewSolpedProjectTitle(firstQ.projectTitle || '');
+        setNewSolpedPep(`PEP-${firstQ.quotationCode || 'PRJ-2026'}.1`);
+        setNewSolpedCurrency(firstQ.currency || 'UF');
+      } else {
+        setNewSolpedQuotationId('');
+        setNewSolpedQuotationCode('COT-SAP-2026-001');
+        setNewSolpedClientName('Inversiones Twin Ducks Capital SpA');
+        setNewSolpedProjectTitle('Consultoría y Servicios SAP Especializados');
+        setNewSolpedPep('PEP-SAP-2026-001.1');
+        setNewSolpedCurrency('UF');
+      }
+      setNewSolpedCeco('CC-10100');
+      setNewSolpedDocType('NB');
+      setNewSolpedNotes('');
+      setNewSolpedPositions([
+        {
+          roleTitle: 'ABAPER',
+          moduleCode: 'DEV_ABAP',
+          moduleName: 'Desarrollador ABAP',
+          seniority: 'Senior',
+          hours: 120,
+          hourlyRate: 2.0,
+          currency: 'UF',
+          currencySymbol: 'UF',
+          pepElement: '',
+          costCenter: 'CC-10100'
+        }
+      ]);
+    }
+
+    setIsCreatingSolped(true);
+  };
+
+  const handleSelectQuotationForSolped = (quoteId: string) => {
+    const q = quotations?.find(item => item.id === quoteId);
+    if (q) {
+      setNewSolpedQuotationId(q.id);
+      setNewSolpedQuotationCode(q.quotationCode || q.id);
+      setNewSolpedClientName(q.clientCompanyName || '');
+      setNewSolpedProjectTitle(q.projectTitle || '');
+      setNewSolpedPep(`PEP-${q.quotationCode || 'PRJ-2026'}.1`);
+      if (q.currency) {
+        setNewSolpedCurrency(q.currency);
+        setNewSolpedPositions(prev => prev.map(p => ({
+          ...p,
+          currency: q.currency,
+          currencySymbol: q.currency === 'UF' ? 'UF' : '$'
+        })));
+      }
+    } else {
+      setNewSolpedQuotationId('');
+    }
+  };
+
+  const handleAddNewSolpedPosition = () => {
+    const defaultPreset = SAP_SPECIALTY_PRESETS[0];
+    const defaultRate = newSolpedCurrency === 'UF' ? 2.0 : newSolpedCurrency === 'USD' ? 45 : 35000;
+    setNewSolpedPositions(prev => [
+      ...prev,
+      {
+        roleTitle: defaultPreset.label,
+        moduleCode: defaultPreset.code as SapModuleCode,
+        moduleName: defaultPreset.moduleName,
+        seniority: 'Senior',
+        hours: 80,
+        hourlyRate: defaultRate,
+        currency: newSolpedCurrency,
+        currencySymbol: newSolpedCurrency === 'UF' ? 'UF' : '$',
+        costCenter: newSolpedCeco || 'CC-10100'
+      }
+    ]);
+  };
+
+  const handleRemoveSolpedPosition = (index: number) => {
+    if (newSolpedPositions.length <= 1) return;
+    setNewSolpedPositions(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleUpdateSolpedPosition = (index: number, field: keyof CreateSolpedPositionItem, value: any) => {
+    setNewSolpedPositions(prev => prev.map((pos, idx) => {
+      if (idx !== index) return pos;
+      return { ...pos, [field]: value };
+    }));
+  };
+
+  const handleSelectPresetForPosition = (index: number, presetId: string) => {
+    const preset = SAP_SPECIALTY_PRESETS.find(p => p.id === presetId);
+    if (!preset) return;
+    setNewSolpedPositions(prev => prev.map((pos, idx) => {
+      if (idx !== index) return pos;
+      return {
+        ...pos,
+        roleTitle: preset.label,
+        moduleCode: preset.code as SapModuleCode,
+        moduleName: preset.moduleName
+      };
+    }));
+  };
+
+  const handleSaveNewSolped = () => {
+    if (!newSolpedSupplier.trim()) {
+      alert('Por favor ingrese el Proveedor / Subcontratista sugerido.');
+      return;
+    }
+    if (newSolpedPositions.length === 0) {
+      alert('Debe incluir al menos una posición de servicio.');
+      return;
+    }
+
+    const created = createNewSolped({
+      referenceSolpedNumber: createMode === 'reference' ? selectedReferenceSolpedNum : undefined,
+      quotationId: newSolpedQuotationId,
+      quotationCode: newSolpedQuotationCode,
+      clientCompanyName: newSolpedClientName,
+      projectTitle: newSolpedProjectTitle,
+      supplierName: newSolpedSupplier,
+      supplierTaxId: newSolpedSupplierTaxId,
+      pepElement: newSolpedPep || 'PEP-SAP-2026-001.1',
+      costCenter: newSolpedCeco || 'CC-10100',
+      documentType: newSolpedDocType,
+      currency: newSolpedCurrency,
+      currencySymbol: newSolpedCurrency === 'UF' ? 'UF' : '$',
+      notes: newSolpedNotes,
+      positions: newSolpedPositions
+    });
+
+    reloadData();
+    setIsCreatingSolped(false);
+    const newNum = created[0]?.solpedNumber || '';
+    setSuccessNotice(
+      `✓ Solicitud de Pedido SOLPED #${newNum} creada exitosamente con ${created.length} posición(es) (Transacción SAP ME51N). Estado: Pendiente de Liberación (ME54N).`
+    );
+  };
 
   const reloadData = () => {
     setSolpeds(getStoredSolpeds());
@@ -959,72 +1170,79 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-150">
-      {/* Top Banner SAP MM */}
-      <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white rounded-2xl p-6 shadow-xl border border-blue-900/50">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-blue-600/30 border border-blue-400/40 flex items-center justify-center shrink-0">
-              <ShoppingBag className="w-6 h-6 text-blue-300" />
+      {/* Top Banner SAP MM - Diseño Compacto y Ergonómico (Ahorro >50% espacio) */}
+      <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white rounded-2xl p-3 sm:p-3.5 shadow-md border border-blue-900/50 space-y-2.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-600/30 border border-blue-400/30 flex items-center justify-center shrink-0">
+              <ShoppingBag className="w-4 h-4 text-blue-300" />
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">
-                  SAP MM • PROCUREMENT DE SERVICIOS
-                </span>
-                <span className="text-xs text-slate-400 font-mono">
-                  Posición tipo 'D' (Servicios) • Imputación PEP 'P'
-                </span>
-              </div>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white mt-1">
-                Gestión de Compras, SOLPEDs & Órdenes de Compra
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                SAP MM
+              </span>
+              <h1 className="text-sm sm:text-base font-black tracking-tight text-white">
+                Gestión de Compras, SOLPEDs y Órdenes
               </h1>
-              <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-3xl">
-                Trazabilidad oficial de subcontratación de consultores externos: generación de Solicitud de Pedido (ME51N), 
-                estrategia de liberación (ME54N), emisión de Pedido/OC (ME21N) y registro de Hojas de Entrada de Servicios (ML81N).
-              </p>
+              <span className="text-[11px] text-slate-400 font-mono hidden md:inline">
+                • Posición Tipo 'D' (Servicios) • Imputación PEP 'P'
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
+              type="button"
               onClick={reloadData}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+              title="Actualizar datos desde el repositorio"
             >
-              Actualizar Datos
+              <RefreshCw className="w-3.5 h-3.5 text-blue-300" />
+              <span>Actualizar Datos</span>
             </button>
           </div>
         </div>
 
-        {/* Procurement KPI Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 mt-6 pt-6 border-t border-slate-800">
-          <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3">
-            <span className="text-[11px] text-slate-400 font-medium block">Total SOLPEDs (ME51N)</span>
-            <span className="text-xl font-bold text-white mt-0.5 block">{solpeds.length}</span>
-            <span className="text-[10px] text-blue-300">Requerimientos de servicio</span>
+        {/* Procurement KPI Ribbon - Compacto y de alta densidad */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 pt-2 border-t border-slate-800/80 text-xs">
+          <div className="bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
+            <div>
+              <span className="text-[10px] text-slate-400 font-medium block">Total SOLPEDs</span>
+              <span className="text-[9px] text-blue-300 font-mono">ME51N</span>
+            </div>
+            <span className="text-sm font-bold text-white font-mono">{solpeds.length}</span>
           </div>
 
-          <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3">
-            <span className="text-[11px] text-slate-400 font-medium block">Pendientes Liberar (ME54N)</span>
-            <span className="text-xl font-bold text-amber-400 mt-0.5 block">{pendingReleaseCount}</span>
-            <span className="text-[10px] text-slate-400">Requieren aprobación</span>
+          <div className="bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
+            <div>
+              <span className="text-[10px] text-slate-400 font-medium block">Pendientes Liberar</span>
+              <span className="text-[9px] text-amber-400 font-mono">ME54N</span>
+            </div>
+            <span className="text-sm font-bold text-amber-400 font-mono">{pendingReleaseCount}</span>
           </div>
 
-          <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3">
-            <span className="text-[11px] text-slate-400 font-medium block">Aprobadas / Por Comprar</span>
-            <span className="text-xl font-bold text-emerald-400 mt-0.5 block">{approvedSolpedsCount}</span>
-            <span className="text-[10px] text-emerald-300">Listas para emitir OC</span>
+          <div className="bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
+            <div>
+              <span className="text-[10px] text-slate-400 font-medium block">Aprobadas / Por Comprar</span>
+              <span className="text-[9px] text-emerald-300 font-mono">Listas OC</span>
+            </div>
+            <span className="text-sm font-bold text-emerald-400 font-mono">{approvedSolpedsCount}</span>
           </div>
 
-          <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3">
-            <span className="text-[11px] text-slate-400 font-medium block">Órdenes de Compra (ME21N)</span>
-            <span className="text-xl font-bold text-purple-400 mt-0.5 block">{activePosCount}</span>
-            <span className="text-[10px] text-slate-400">Pedidos adjudicados</span>
+          <div className="bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
+            <div>
+              <span className="text-[10px] text-slate-400 font-medium block">Órdenes de Compra</span>
+              <span className="text-[9px] text-purple-300 font-mono">ME21N</span>
+            </div>
+            <span className="text-sm font-bold text-purple-400 font-mono">{activePosCount}</span>
           </div>
 
-          <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3 col-span-2 sm:col-span-1">
-            <span className="text-[11px] text-slate-400 font-medium block">Horas Subcontratadas</span>
-            <span className="text-xl font-bold text-blue-400 mt-0.5 block">{totalSubcontractedHours} hrs</span>
-            <span className="text-[10px] text-slate-400">Esfuerzo externo</span>
+          <div className="bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-1.5 flex items-center justify-between col-span-2 sm:col-span-1">
+            <div>
+              <span className="text-[10px] text-slate-400 font-medium block">Horas Subcontratadas</span>
+              <span className="text-[9px] text-slate-400 font-mono">Esfuerzo</span>
+            </div>
+            <span className="text-sm font-bold text-blue-400 font-mono">{totalSubcontractedHours} hrs</span>
           </div>
         </div>
       </div>
@@ -1149,7 +1367,30 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Botones de Creación y Utilidades ALV */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Grupo de botones para crear nueva SOLPED (ME51N) */}
+                <div className="flex items-center bg-blue-50/80 border border-blue-200 rounded-lg p-0.5 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenCreateSolped('blank')}
+                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs active:scale-98"
+                    title="Crear nueva SOLPED en blanco desde cero (Transacción ME51N)"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Nueva SOLPED</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenCreateSolped('reference')}
+                    className="px-2 py-1 bg-white hover:bg-blue-50 text-blue-700 hover:text-blue-900 rounded-md text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 ml-0.5"
+                    title="Crear nueva SOLPED tomando como referencia una SOLPED anterior existente (ME51N)"
+                  >
+                    <Copy className="w-3 h-3 text-blue-600" />
+                    <span>Con Referencia</span>
+                  </button>
+                </div>
+
                 {/* Toggle Totales ALV */}
                 <button
                   type="button"
@@ -1846,175 +2087,777 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
         )}
       </div>
 
-      {/* MODAL 1: CONVERT SOLPED TO PURCHASE ORDER (ME21N) */}
-      {solpedToConvert && (
-        <div 
-          className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in"
-          onClick={() => setSolpedToConvert(null)}
-        >
-          <div 
-            className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 space-y-4"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-purple-700">
-                  <FileCheck2 className="w-5 h-5" />
+      {/* MODAL 0: CREAR SOLPED (ME51N) - EN BLANCO O CON REFERENCIA */}
+      {isCreatingSolped && (() => {
+        const totalHrs = newSolpedPositions.reduce((acc, p) => acc + (Number(p.hours) || 0), 0);
+        const totalAmt = newSolpedPositions.reduce((acc, p) => acc + (Number(p.hours) || 0) * (Number(p.hourlyRate) || 0), 0);
+        const uniqueSolpedsList: ServicePurchaseRequisition[] = Array.from(new Map<string, ServicePurchaseRequisition>(solpeds.map(s => [s.solpedNumber, s])).values());
+
+        return (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-150">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+              {/* Modal Header */}
+              <div className="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between shrink-0 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-blue-600/30 border border-blue-400/40 flex items-center justify-center shrink-0">
+                    <FilePlus className="w-5 h-5 text-blue-300" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40 px-1.5 py-0.5 rounded">
+                        SAP ME51N
+                      </span>
+                      <h2 className="text-sm sm:text-base font-bold text-white">
+                        Crear Solicitud de Pedido de Servicios (SOLPED)
+                      </h2>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Alta oficial de requerimiento de compras con imputación PEP 'P' y posiciones tipo 'D' (Servicios Externos)
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">
-                    Emitir Orden de Compra de Servicio (ME21N)
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Con referencia a Solicitud de Pedido SOLPED #{solpedToConvert.solpedNumber}
-                  </p>
-                </div>
+                <button 
+                  type="button"
+                  onClick={() => setIsCreatingSolped(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <button 
-                onClick={() => setSolpedToConvert(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            <form onSubmit={handleConfirmConvert} className="space-y-4 text-xs">
-              <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3.5 space-y-2.5">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Cotización & Proyecto:</span>
-                  <span className="font-medium text-slate-800">{solpedToConvert.quotationCode} • {solpedToConvert.clientCompanyName}</span>
+              {/* Modal Body: Scrollable */}
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-4 text-xs">
+                {/* Modalidad de Creación (Selector En Blanco vs Con Referencia) */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="font-bold text-slate-700 text-xs">Modalidad de Creación:</span>
+                    <div className="inline-flex p-0.5 bg-slate-200 rounded-lg border border-slate-300">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCreateMode('blank');
+                        }}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                          createMode === 'blank'
+                            ? 'bg-white text-blue-700 shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>En Blanco (Desde Cero)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCreateMode('reference');
+                          if (!selectedReferenceSolpedNum && uniqueSolpedsList.length > 0) {
+                            applyReferenceSolped(uniqueSolpedsList[0].solpedNumber);
+                          }
+                        }}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                          createMode === 'reference'
+                            ? 'bg-white text-blue-700 shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <Copy className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Con Referencia a SOLPED Anterior</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="text-[11px] text-slate-500 font-mono">
+                    Tipo Doc: <span className="font-bold text-slate-700">{newSolpedDocType}</span> • Posición: <span className="font-bold text-blue-700">D (Servicios)</span>
+                  </div>
                 </div>
 
-                {(() => {
-                  const convertPositions = getSolpedPositions(solpedToConvert.solpedNumber);
-                  const positionsList = convertPositions.length > 0 ? convertPositions : [solpedToConvert];
-                  const totalHrs = positionsList.reduce((sum, p) => sum + (Number(p.hours) || 0), 0);
-                  const totalNet = positionsList.reduce((sum, p) => sum + (Number(p.totalAmount) || 0), 0);
+                {/* Si es con Referencia: Selector de SOLPED Existente */}
+                {createMode === 'reference' && (
+                  <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-2 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[11px] font-bold text-blue-950">
+                        Seleccionar SOLPED Modelo de Referencia (ME53N):
+                      </label>
+                      <span className="text-[10px] text-blue-700 font-medium">
+                        {uniqueSolpedsList.length} SOLPEDs disponibles para clonar
+                      </span>
+                    </div>
+                    <select
+                      value={selectedReferenceSolpedNum}
+                      onChange={(e) => applyReferenceSolped(e.target.value)}
+                      className="w-full bg-white border border-blue-300 rounded-lg p-2 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                    >
+                      {uniqueSolpedsList.map(sp => {
+                        const count = solpeds.filter(s => s.solpedNumber === sp.solpedNumber).length;
+                        return (
+                          <option key={sp.solpedNumber} value={sp.solpedNumber}>
+                            SOLPED #{sp.solpedNumber} — {sp.supplierName} • {sp.clientCompanyName} ({sp.projectTitle || sp.quotationCode}) [{count} {count === 1 ? 'posición' : 'posiciones'}]
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <div className="text-[11px] text-blue-800 flex items-center gap-1.5 bg-blue-100/60 p-2 rounded-lg">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span>
+                        Datos clonados desde <strong>SOLPED #{selectedReferenceSolpedNum}</strong>. Se generará un nuevo correlativo oficial SAP (ME51N) conservando o adaptando roles, horas y tarifas.
+                      </span>
+                    </div>
+                  </div>
+                )}
 
-                  return (
-                    <>
-                      <div className="pt-2 border-t border-purple-200/60">
-                        <span className="text-[11px] font-bold text-purple-950 block mb-1.5">
-                          Posiciones de la SOLPED a contratar ({positionsList.length} {positionsList.length === 1 ? 'especialista' : 'especialistas'}):
-                        </span>
-                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                          {positionsList.map(pos => (
-                            <div key={pos.id} className="flex items-center justify-between bg-white/90 p-2 rounded-lg border border-purple-200 text-[11px]">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded text-[10px]">
-                                  Pos. {pos.positionNumber}
-                                </span>
-                                <div>
-                                  <span className="font-bold text-slate-800">{pos.roleTitle}</span>
-                                  <span className="text-[10px] text-slate-500 ml-1 font-mono">({pos.pepElement})</span>
-                                </div>
-                              </div>
-                              <div className="text-right font-mono">
-                                <span className="font-bold text-slate-700">{pos.hours} hrs</span>
-                                <span className="text-purple-900 font-bold ml-2">
-                                  {formatCurrency(pos.totalAmount, pos.currency, pos.currencySymbol)}
-                                </span>
-                              </div>
-                            </div>
+                {/* Tarjeta de Datos de Cabecera (Header Data) */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-blue-700" />
+                      <span className="font-bold text-slate-800 text-xs">Datos de Cabecera (Header Data)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">Imputación PEP 'P' • Categoría 'D'</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        Proveedor / Subcontratista Sugerido *
+                      </label>
+                      <input
+                        type="text"
+                        value={newSolpedSupplier}
+                        onChange={(e) => setNewSolpedSupplier(e.target.value)}
+                        placeholder="Ej. Partner Subcontratista SAP"
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        RUT / Tax ID Proveedor
+                      </label>
+                      <input
+                        type="text"
+                        value={newSolpedSupplierTaxId}
+                        onChange={(e) => setNewSolpedSupplierTaxId(e.target.value)}
+                        placeholder="Ej. 76.543.210-K"
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        Cotización Comercial Asociada
+                      </label>
+                      {quotations && quotations.length > 0 ? (
+                        <select
+                          value={newSolpedQuotationId}
+                          onChange={(e) => handleSelectQuotationForSolped(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                        >
+                          <option value="">-- Sin cotización vinculada --</option>
+                          {quotations.map(q => (
+                            <option key={q.id} value={q.id}>
+                              {q.quotationCode || q.id} - {q.clientCompanyName}
+                            </option>
                           ))}
-                        </div>
-                      </div>
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={newSolpedQuotationCode}
+                          onChange={(e) => setNewSolpedQuotationCode(e.target.value)}
+                          placeholder="COT-SAP-2026-001"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                        />
+                      )}
+                    </div>
 
-                      <div className="flex justify-between pt-2 border-t border-purple-200/60 font-bold">
-                        <span className="text-purple-950">Total Contratado de la Orden:</span>
-                        <span className="text-purple-900 font-mono text-sm">
-                          {totalHrs} hrs • {formatCurrency(totalNet, solpedToConvert.currency, solpedToConvert.currencySymbol)}
-                        </span>
-                      </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        Moneda de la SOLPED
+                      </label>
+                      <select
+                        value={newSolpedCurrency}
+                        onChange={(e) => {
+                          const curr = e.target.value as SupportedCurrency;
+                          setNewSolpedCurrency(curr);
+                          const symbol = curr === 'UF' ? 'UF' : '$';
+                          setNewSolpedPositions(prev => prev.map(p => ({
+                            ...p,
+                            currency: curr,
+                            currencySymbol: symbol
+                          })));
+                        }}
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                      >
+                        <option value="UF">UF (Unidad de Fomento)</option>
+                        <option value="CLP">CLP (Peso Chileno)</option>
+                        <option value="USD">USD (Dólar Estadounidense)</option>
+                        <option value="EUR">EUR (Euro)</option>
+                        <option value="MXN">MXN (Peso Mexicano)</option>
+                      </select>
+                    </div>
 
-                      <div className="bg-purple-100/80 rounded-lg p-2 text-[11px] text-purple-900 flex items-center gap-1.5 font-medium">
-                        <Check className="w-3.5 h-3.5 text-purple-700 shrink-0" />
-                        <span>
-                          {positionsList.length > 1 
-                            ? `Se emitirá 1 única Orden de Compra oficial consolidada para las ${positionsList.length} posiciones de esta SOLPED.`
-                            : 'Se emitirá 1 Orden de Compra oficial para esta SOLPED.'}
-                        </span>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        Cliente / Razón Social Mandante
+                      </label>
+                      <input
+                        type="text"
+                        value={newSolpedClientName}
+                        onChange={(e) => setNewSolpedClientName(e.target.value)}
+                        placeholder="Ej. Inversiones Twin Ducks Capital"
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                      />
+                    </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Razón Social Proveedor / Contratista</label>
-                  <input
-                    type="text"
-                    required
-                    value={convertSupplierName}
-                    onChange={e => setConvertSupplierName(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-medium focus:bg-white focus:outline-none"
-                  />
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        Proyecto SAP / Título Requerimiento
+                      </label>
+                      <input
+                        type="text"
+                        value={newSolpedProjectTitle}
+                        onChange={(e) => setNewSolpedProjectTitle(e.target.value)}
+                        placeholder="Ej. Consultoría y Servicios Especializados SAP"
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        Elemento PEP (Imputación 'P') *
+                      </label>
+                      <input
+                        type="text"
+                        value={newSolpedPep}
+                        onChange={(e) => setNewSolpedPep(e.target.value)}
+                        placeholder="PEP-SAP-2026-001.1"
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-blue-700 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        Centro de Coste (CeCo)
+                      </label>
+                      <input
+                        type="text"
+                        value={newSolpedCeco}
+                        onChange={(e) => setNewSolpedCeco(e.target.value)}
+                        placeholder="CC-10100"
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                      />
+                    </div>
+                  </div>
                 </div>
 
+                {/* Listado ALV de Posiciones de Servicio de la SOLPED */}
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs space-y-0">
+                  <div className="bg-slate-100/90 px-3.5 py-2.5 border-b border-slate-200 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <TableIcon className="w-4 h-4 text-blue-700" />
+                      <span className="font-bold text-slate-800 text-xs">
+                        Posiciones de Servicio de la SOLPED (Tipo 'D' - Servicios)
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                        {newSolpedPositions.length} {newSolpedPositions.length === 1 ? 'posición' : 'posiciones'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddNewSolpedPosition}
+                      className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Agregar Posición</span>
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-slate-50 text-slate-700 border-b border-slate-200 font-semibold text-[11px]">
+                        <tr>
+                          <th className="p-2.5 text-center w-12">Pos.</th>
+                          <th className="p-2.5 min-w-[200px]">Rol / Perfil de Servicio</th>
+                          <th className="p-2.5 min-w-[130px]">Seniority</th>
+                          <th className="p-2.5 text-right w-24">Horas</th>
+                          <th className="p-2.5 text-right w-28">Tarifa / Hr</th>
+                          <th className="p-2.5 text-right min-w-[120px]">Subtotal</th>
+                          <th className="p-2.5 text-center w-12">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {newSolpedPositions.map((pos, idx) => {
+                          const posNum = String((idx + 1) * 10).padStart(5, '0');
+                          const subtotal = (Number(pos.hours) || 0) * (Number(pos.hourlyRate) || 0);
+
+                          return (
+                            <tr key={idx} className="hover:bg-blue-50/40 transition-colors">
+                              <td className="p-2.5 text-center font-mono font-bold text-slate-500">
+                                {posNum}
+                              </td>
+                              <td className="p-2.5">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <input
+                                      type="text"
+                                      value={pos.roleTitle}
+                                      onChange={(e) => handleUpdateSolpedPosition(idx, 'roleTitle', e.target.value)}
+                                      placeholder="Nombre o Perfil de Servicio"
+                                      className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-xs font-medium text-slate-800 focus:ring-1 focus:ring-blue-500"
+                                    />
+                                    <select
+                                      onChange={(e) => handleSelectPresetForPosition(idx, e.target.value)}
+                                      defaultValue=""
+                                      className="bg-slate-50 border border-slate-300 rounded px-1.5 py-1 text-[11px] text-slate-600 focus:outline-hidden"
+                                      title="Seleccionar preset SAP"
+                                    >
+                                      <option value="" disabled>Presets SAP...</option>
+                                      {SAP_SPECIALTY_PRESETS.map(preset => (
+                                        <option key={preset.id} value={preset.id}>
+                                          {preset.label} ({preset.category})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 font-mono">
+                                    Imputación PEP: {pos.pepElement || `${newSolpedPep || 'PEP-SAP'}.${idx + 1}`}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-2.5">
+                                <select
+                                  value={pos.seniority}
+                                  onChange={(e) => handleUpdateSolpedPosition(idx, 'seniority', e.target.value as SeniorityLevel)}
+                                  className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-800 focus:ring-1 focus:ring-blue-500"
+                                >
+                                  <option value="Junior">Junior</option>
+                                  <option value="Semi-Senior">Semi-Senior</option>
+                                  <option value="Senior">Senior</option>
+                                  <option value="Lead / Arquitecto">Lead / Arquitecto</option>
+                                </select>
+                              </td>
+                              <td className="p-2.5 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    value={pos.hours || ''}
+                                    onChange={(e) => handleUpdateSolpedPosition(idx, 'hours', Number(e.target.value))}
+                                    className="w-16 bg-white border border-slate-300 rounded px-1.5 py-1 text-xs text-right font-bold text-slate-800 focus:ring-1 focus:ring-blue-500"
+                                  />
+                                  <span className="text-[10px] text-slate-400 font-mono">HUR</span>
+                                </div>
+                              </td>
+                              <td className="p-2.5 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <span className="text-[10px] text-slate-400 font-mono">{newSolpedCurrency}</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.1"
+                                    value={pos.hourlyRate || ''}
+                                    onChange={(e) => handleUpdateSolpedPosition(idx, 'hourlyRate', Number(e.target.value))}
+                                    className="w-20 bg-white border border-slate-300 rounded px-1.5 py-1 text-xs text-right font-mono font-bold text-slate-800 focus:ring-1 focus:ring-blue-500"
+                                  />
+                                </div>
+                              </td>
+                              <td className="p-2.5 text-right font-mono font-bold text-blue-900">
+                                {formatCurrency(subtotal, newSolpedCurrency, newSolpedCurrency === 'UF' ? 'UF' : '$')}
+                              </td>
+                              <td className="p-2.5 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveSolpedPosition(idx)}
+                                  disabled={newSolpedPositions.length <= 1}
+                                  className={`p-1 rounded transition-colors cursor-pointer ${
+                                    newSolpedPositions.length <= 1
+                                      ? 'text-slate-300 cursor-not-allowed'
+                                      : 'text-rose-500 hover:text-rose-700 hover:bg-rose-50'
+                                  }`}
+                                  title="Eliminar posición"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot className="bg-slate-50 border-t border-slate-200 font-bold text-xs">
+                        <tr>
+                          <td colSpan={3} className="p-2.5 text-right text-slate-700">
+                            Totales Estimados SOLPED (ME51N):
+                          </td>
+                          <td className="p-2.5 text-right font-bold text-slate-900">
+                            {totalHrs} HUR
+                          </td>
+                          <td className="p-2.5"></td>
+                          <td className="p-2.5 text-right font-mono text-sm text-blue-700 font-black">
+                            {formatCurrency(totalAmt, newSolpedCurrency, newSolpedCurrency === 'UF' ? 'UF' : '$')}
+                          </td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Observaciones y Notas */}
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">RUT / Tax ID Proveedor</label>
-                  <input
-                    type="text"
-                    value={convertSupplierTaxId}
-                    onChange={e => setConvertSupplierTaxId(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-mono focus:bg-white focus:outline-none"
+                  <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                    Observaciones y Especificaciones Técnicas del Servicio (ME51N)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={newSolpedNotes}
+                    onChange={(e) => setNewSolpedNotes(e.target.value)}
+                    placeholder="Indique detalles adicionales sobre el requerimiento de consultoría, condiciones de entrega o alcances técnicos..."
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Email Proveedor / Contacto</label>
-                  <input
-                    type="email"
-                    value={convertSupplierEmail}
-                    onChange={e => setConvertSupplierEmail(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 focus:bg-white focus:outline-none"
-                  />
+              {/* Modal Footer */}
+              <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex items-center justify-between shrink-0">
+                <div className="text-[11px] text-slate-500">
+                  Al grabar, la SOLPED pasará a estado <strong>'Pendiente de Liberación (ME54N)'</strong>.
                 </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Condiciones de Pago</label>
-                  <input
-                    type="text"
-                    value={convertPaymentTerms}
-                    onChange={e => setConvertPaymentTerms(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 focus:bg-white focus:outline-none"
-                  />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingSolped(false)}
+                    className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveNewSolped}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-md active:scale-98"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Grabar SOLPED Oficial (ME51N)</span>
+                  </button>
                 </div>
               </div>
+            </div>
+          </div>
+        );
+      })()}
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Observaciones del Comprador</label>
-                <textarea
-                  rows={2}
-                  value={convertBuyerNotes}
-                  onChange={e => setConvertBuyerNotes(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 focus:bg-white focus:outline-none"
-                />
-              </div>
+      {/* MODAL 1: CONVERT SOLPED TO PURCHASE ORDER (ME21N) - ALV MULTI-POSITION WORKSPACE (90% SCREEN) */}
+      {solpedToConvert && (() => {
+        const convertPositions = getSolpedPositions(solpedToConvert.solpedNumber);
+        const positionsList = convertPositions.length > 0 ? convertPositions : [solpedToConvert];
+        const totalHrs = positionsList.reduce((sum, p) => sum + (Number(p.hours) || 0), 0);
+        const totalNet = positionsList.reduce((sum, p) => sum + (Number(p.totalAmount) || 0), 0);
+        const taxPercentage = 19;
+        const taxAmount = Math.round((totalNet * taxPercentage) / 100);
+        const totalGross = totalNet + taxAmount;
 
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200">
-                <button
+        return (
+          <div 
+            className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-hidden animate-in fade-in"
+            onClick={() => setSolpedToConvert(null)}
+          >
+            <div 
+              className="bg-white rounded-2xl w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 p-5 space-y-3 my-auto overflow-hidden animate-in zoom-in-95"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2.5 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center text-purple-700">
+                    <FileCheck2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                      <span>Emitir Orden de Compra de Servicio (ME21N)</span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 font-bold">
+                        {positionsList.length} {positionsList.length === 1 ? 'Posición ALV' : 'Posiciones ALV'}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Con referencia a Solicitud de Pedido SOLPED #{solpedToConvert.solpedNumber} • Cotización: {solpedToConvert.quotationCode} • Cliente: {solpedToConvert.clientCompanyName}
+                    </p>
+                  </div>
+                </div>
+                <button 
                   type="button"
                   onClick={() => setSolpedToConvert(null)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Emitir Pedido de Compra Oficial (ME21N)</span>
+                  <X className="w-5 h-5" />
                 </button>
               </div>
-            </form>
+
+              {/* Form Container (No global scroll, flex column taking available height) */}
+              <form onSubmit={handleConfirmConvert} className="flex flex-col flex-1 min-h-0 overflow-hidden space-y-3 text-xs">
+                
+                {/* SECCIÓN SUPERIOR: DATOS DE CABECERA (Fija, sin scroll) */}
+                <div className="bg-slate-50/90 border border-slate-200 rounded-xl p-3 space-y-2.5 shrink-0 shadow-2xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                    <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5 uppercase tracking-wider">
+                      <Building2 className="w-3.5 h-3.5 text-purple-700" />
+                      Datos de Cabecera del Pedido de Compras (Header Data)
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-slate-600">
+                      <span className="bg-white border border-slate-200 px-2 py-0.5 rounded font-bold text-purple-800">
+                        Clase Doc: NB (Estándar)
+                      </span>
+                      <span className="bg-white border border-slate-200 px-2 py-0.5 rounded font-bold text-slate-700">
+                        Org. Compras: 1000
+                      </span>
+                      <span className="bg-white border border-slate-200 px-2 py-0.5 rounded font-bold text-slate-700">
+                        Grupo Compras: C01
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Inputs de Cabecera en Grid de 4 columnas */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1 text-[11px]">
+                        Razón Social Proveedor / Contratista <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={convertSupplierName}
+                        onChange={e => setConvertSupplierName(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 font-medium focus:border-purple-500 focus:outline-none text-xs shadow-2xs"
+                        placeholder="Nombre del proveedor..."
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1 text-[11px]">RUT / Tax ID Proveedor</label>
+                      <input
+                        type="text"
+                        value={convertSupplierTaxId}
+                        onChange={e => setConvertSupplierTaxId(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 font-mono focus:border-purple-500 focus:outline-none text-xs shadow-2xs"
+                        placeholder="Ej: 76.884.210-9"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1 text-[11px]">Email Proveedor / Contacto</label>
+                      <input
+                        type="email"
+                        value={convertSupplierEmail}
+                        onChange={e => setConvertSupplierEmail(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 focus:border-purple-500 focus:outline-none text-xs shadow-2xs"
+                        placeholder="contacto@proveedor.com"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1 text-[11px]">Condiciones de Pago</label>
+                      <input
+                        type="text"
+                        value={convertPaymentTerms}
+                        onChange={e => setConvertPaymentTerms(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 focus:border-purple-500 focus:outline-none text-xs shadow-2xs"
+                        placeholder="Ej: 30 días contra HES aprobada"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Observaciones y Moneda / Proyecto en Grid compacta */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 pt-0.5">
+                    <div className="lg:col-span-8">
+                      <label className="font-bold text-slate-700 block mb-1 text-[11px]">Observaciones / Textos de Cabecera del Comprador</label>
+                      <input
+                        type="text"
+                        value={convertBuyerNotes}
+                        onChange={e => setConvertBuyerNotes(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 focus:border-purple-500 focus:outline-none text-xs shadow-2xs"
+                        placeholder="Observaciones de licitación, condiciones técnicas o comerciales..."
+                      />
+                    </div>
+
+                    <div className="lg:col-span-4 bg-white border border-slate-200 rounded-lg px-3 py-1.5 flex items-center justify-between gap-2 text-[10px]">
+                      <div>
+                        <span className="text-slate-400 block uppercase font-semibold text-[9px]">Proyecto</span>
+                        <span className="font-bold text-slate-800 truncate max-w-[150px] block" title={solpedToConvert.projectTitle || solpedToConvert.quotationCode}>
+                          {solpedToConvert.projectTitle || solpedToConvert.quotationCode}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-slate-400 block uppercase font-semibold text-[9px]">Moneda / Imputación</span>
+                        <span className="font-mono font-bold text-purple-700">
+                          {solpedToConvert.currency} ({solpedToConvert.currencySymbol}) • 'F'/'P'
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SECCIÓN INFERIOR: POSICIONES EN ALV (ÚNICA ÁREA CON SCROLL) */}
+                <div className="flex-1 min-h-0 flex flex-col space-y-2 overflow-hidden">
+                  {/* ALV Toolbar (Fijo) */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100/90 p-2 rounded-xl border border-slate-200 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1 rounded bg-purple-100 text-purple-700">
+                        <TableIcon className="w-3.5 h-3.5" />
+                      </div>
+                      <h4 className="font-bold text-slate-800 text-xs">
+                        Listado ALV de Posiciones de la SOLPED a Contratar
+                      </h4>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                        {positionsList.length} {positionsList.length === 1 ? 'posición' : 'posiciones'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Total: {totalHrs} hrs • {formatCurrency(totalNet, solpedToConvert.currency, solpedToConvert.currencySymbol)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleExportCsv(positionsList, `posiciones_contratacion_solped_${solpedToConvert.solpedNumber}.csv`)}
+                        className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                        title="Exportar posiciones a CSV"
+                      >
+                        <Download className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Exportar ALV (.csv)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ALV Table (Con scroll vertical y horizontal propio) */}
+                  <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase tracking-wider text-[10px] sticky top-0 z-10 shadow-xs">
+                        <tr>
+                          <th className="p-2.5 text-center w-8 bg-slate-100">Sem.</th>
+                          <th className="p-2.5 bg-slate-100">Pos.</th>
+                          <th className="p-2.5 bg-slate-100">TP / TI</th>
+                          <th className="p-2.5 bg-slate-100">Texto Breve / Perfil Servicio</th>
+                          <th className="p-2.5 bg-slate-100">Elemento PEP</th>
+                          <th className="p-2.5 bg-slate-100">CeCo</th>
+                          <th className="p-2.5 text-right bg-slate-100">Cantidad (Horas)</th>
+                          <th className="p-2.5 text-right bg-slate-100">Precio / Hora</th>
+                          <th className="p-2.5 text-right bg-slate-100">Valor Total Neto</th>
+                          <th className="p-2.5 text-center bg-slate-100">Estado SOLPED</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        {positionsList.map(pos => {
+                          return (
+                            <tr key={pos.id} className="hover:bg-purple-50/40 transition-colors">
+                              <td className="p-2.5 text-center">
+                                <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs" title="Lista para emisión de Orden de Compra" />
+                              </td>
+                              <td className="p-2.5 font-mono font-bold text-purple-700">
+                                {String(pos.positionNumber).padStart(5, '0')}
+                              </td>
+                              <td className="p-2.5 font-mono text-[10px] text-slate-600">
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200">{pos.itemCategory || 'F'}</span>
+                                <span className="ml-1 px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200">{pos.accountAssignmentCategory || 'P'}</span>
+                              </td>
+                              <td className="p-2.5 font-medium text-slate-800">
+                                <div className="font-bold text-slate-900">{pos.roleTitle}</div>
+                                {pos.moduleCode && (
+                                  <span className="text-[10px] text-slate-400 font-mono">
+                                    {pos.moduleCode} • {pos.seniority}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-2.5 font-mono text-[11px] text-slate-700">
+                                {pos.pepElement || '-'}
+                              </td>
+                              <td className="p-2.5 font-mono text-[11px] text-slate-500">
+                                {pos.costCenter || '-'}
+                              </td>
+                              <td className="p-2.5 text-right font-bold font-mono text-slate-800">
+                                {pos.hours} {pos.unit || 'HUR'}
+                              </td>
+                              <td className="p-2.5 text-right font-mono text-slate-600">
+                                {formatCurrency(pos.hourlyRate, pos.currency, pos.currencySymbol)}
+                              </td>
+                              <td className="p-2.5 text-right font-bold font-mono text-purple-900">
+                                {formatCurrency(pos.totalAmount, pos.currency, pos.currencySymbol)}
+                              </td>
+                              <td className="p-2.5 text-center">
+                                <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border bg-emerald-50 text-emerald-700 border-emerald-200">
+                                  Aprobada
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      {/* ALV Totals Footer (Sticky at bottom of table) */}
+                      <tfoot className="bg-slate-100 font-bold border-t-2 border-slate-300 text-slate-800 sticky bottom-0 z-10 shadow-2xs">
+                        <tr>
+                          <td colSpan={6} className="p-2.5 text-right font-mono text-xs bg-slate-100">
+                            LÍNEA DE TOTALES Σ ALV ({positionsList.length} {positionsList.length === 1 ? 'Posición' : 'Posiciones'}):
+                          </td>
+                          <td className="p-2.5 text-right font-mono text-xs text-slate-900 bg-slate-100">
+                            {totalHrs.toLocaleString()} HUR
+                          </td>
+                          <td className="p-2.5 bg-slate-100" />
+                          <td className="p-2.5 text-right font-mono text-xs text-purple-900 bg-slate-100">
+                            {formatCurrency(totalNet, solpedToConvert.currency, solpedToConvert.currencySymbol)}
+                          </td>
+                          <td className="p-2.5 bg-slate-100" />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {/* Consolidated Notice / Financial Totals (Fijo) */}
+                  <div className="bg-purple-50/80 border border-purple-200 rounded-xl p-2.5 px-3 text-[11px] text-purple-900 flex flex-wrap items-center justify-between gap-2 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-purple-700 shrink-0" />
+                      <span>
+                        {positionsList.length > 1 
+                          ? `Se emitirá 1 única Orden de Compra oficial consolidada para las ${positionsList.length} posiciones de esta SOLPED #${solpedToConvert.solpedNumber}.`
+                          : `Se emitirá 1 Orden de Compra oficial para la posición de la SOLPED #${solpedToConvert.solpedNumber}.`}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 font-mono font-bold text-xs shrink-0">
+                      <span className="text-slate-600">Neto: {formatCurrency(totalNet, solpedToConvert.currency, solpedToConvert.currencySymbol)}</span>
+                      <span className="text-slate-400">|</span>
+                      <span className="text-slate-600">IVA (19%): {formatCurrency(taxAmount, solpedToConvert.currency, solpedToConvert.currencySymbol)}</span>
+                      <span className="text-slate-400">|</span>
+                      <span className="text-purple-950 bg-purple-100 px-2 py-0.5 rounded-md">
+                        Total: {formatCurrency(totalGross, solpedToConvert.currency, solpedToConvert.currencySymbol)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Footer Controls (Fijo al fondo) */}
+                <div className="flex items-center justify-between pt-2.5 border-t border-slate-200 shrink-0">
+                  <div className="text-[11px] text-slate-500 font-mono hidden sm:block">
+                    Transacción SAP: ME21N • Tipo de Documento: Pedido de Servicios
+                  </div>
+                  <div className="flex items-center gap-2.5 ml-auto">
+                    <button
+                      type="button"
+                      onClick={() => setSolpedToConvert(null)}
+                      className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Emitir Pedido de Compra Oficial (ME21N)</span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* MODAL 2: ADD SERVICE ENTRY SHEET (HES / ML81N) */}
       {poForHes && (

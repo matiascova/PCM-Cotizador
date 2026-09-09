@@ -6,7 +6,10 @@ import {
   ServicePoItem,
   ServiceEntrySheet,
   SolpedStatus,
-  PurchaseOrderStatus
+  PurchaseOrderStatus,
+  SupportedCurrency,
+  SapModuleCode,
+  SeniorityLevel
 } from '../types';
 
 const SOLPEDS_STORAGE_KEY = 'sap_procurement_solpeds_v1';
@@ -1337,3 +1340,113 @@ export function consolidateStoredSolpedsAndQuotations(): void {
     console.warn('Could not consolidate stored solpeds and quotations:', err);
   }
 }
+
+export interface CreateSolpedPositionItem {
+  roleTitle: string;
+  moduleCode: SapModuleCode;
+  moduleName?: string;
+  seniority: SeniorityLevel;
+  hours: number;
+  hourlyRate: number;
+  currency?: SupportedCurrency;
+  currencySymbol?: string;
+  pepElement?: string;
+  costCenter?: string;
+}
+
+export interface CreateNewSolpedParams {
+  referenceSolpedNumber?: string;
+  quotationId?: string;
+  quotationCode?: string;
+  clientCompanyName?: string;
+  projectTitle?: string;
+  supplierName: string;
+  supplierTaxId?: string;
+  pepElement: string;
+  costCenter?: string;
+  documentType?: 'NB' | 'ZSRV';
+  currency?: SupportedCurrency;
+  currencySymbol?: string;
+  notes?: string;
+  requisitioner?: string;
+  positions: CreateSolpedPositionItem[];
+}
+
+/**
+ * Crea una nueva Solicitud de Pedido de Servicios (Transacción SAP ME51N)
+ * Admite creación en blanco desde cero o con referencia a una SOLPED existente
+ */
+export function createNewSolped(params: CreateNewSolpedParams): ServicePurchaseRequisition[] {
+  const allSolpeds = getStoredSolpeds();
+  
+  // Calcular siguiente correlativo oficial de 10 dígitos (ej. 10000044)
+  const maxSolpedNum = allSolpeds.reduce((max, s) => {
+    const n = parseInt(s.solpedNumber, 10);
+    return !isNaN(n) ? Math.max(max, n) : max;
+  }, 10000040);
+  const newSolpedNumber = String(maxSolpedNum + 1);
+
+  const defaultCurrency: SupportedCurrency = params.currency || 'UF';
+  const defaultCurrencySymbol = params.currencySymbol || (defaultCurrency === 'UF' ? 'UF' : defaultCurrency === 'USD' ? '$' : '$');
+  const docType = params.documentType || 'NB';
+  const now = new Date().toISOString();
+  const reqUser = params.requisitioner || 'PMO Lead / Jefe de Proyecto SAP';
+
+  const positionsToCreate = params.positions.length > 0 
+    ? params.positions 
+    : [{
+        roleTitle: 'Consultor Especialista SAP',
+        moduleCode: 'SAP_ABAP' as SapModuleCode,
+        moduleName: 'Desarrollo ABAP',
+        seniority: 'Senior' as SeniorityLevel,
+        hours: 120,
+        hourlyRate: defaultCurrency === 'UF' ? 2.0 : 45,
+        currency: defaultCurrency,
+        currencySymbol: defaultCurrencySymbol
+      }];
+
+  const newPositions: ServicePurchaseRequisition[] = positionsToCreate.map((pos, idx) => {
+    const hours = Number(pos.hours) || 0;
+    const rate = Number(pos.hourlyRate) || 0;
+    const totalAmount = hours * rate;
+    const posNum = (idx + 1) * 10;
+    const posPep = pos.pepElement || (params.pepElement ? `${params.pepElement.replace(/\.\d+$/, '')}.${idx + 1}` : `PEP-PRJ-${newSolpedNumber}.${idx + 1}`);
+
+    return {
+      id: `sol-${Date.now()}-${idx + 1}-${Math.random().toString(36).substring(2, 6)}`,
+      solpedNumber: newSolpedNumber,
+      documentType: docType,
+      itemCategory: 'D',
+      accountAssignmentCategory: 'P',
+      pepElement: posPep,
+      costCenter: pos.costCenter || params.costCenter || 'CC-10100',
+      quotationId: params.quotationId || `custom-quote-${newSolpedNumber}`,
+      quotationCode: params.quotationCode || `COT-SAP-2026-${newSolpedNumber.slice(-3)}`,
+      clientCompanyName: params.clientCompanyName || 'Cliente Corporativo',
+      projectTitle: params.projectTitle || 'Servicios Profesionales SAP',
+      resourceId: `res-manual-${newSolpedNumber}-${posNum}`,
+      positionNumber: posNum,
+      roleTitle: pos.roleTitle || 'Consultor Especialista SAP',
+      moduleCode: pos.moduleCode || 'SAP_ABAP',
+      moduleName: pos.moduleName || pos.roleTitle || 'Especialista SAP',
+      seniority: pos.seniority || 'Senior',
+      supplierName: params.supplierName || 'Partner Subcontratista SAP',
+      supplierTaxId: params.supplierTaxId || '',
+      hours,
+      unit: 'HUR',
+      hourlyRate: rate,
+      currency: pos.currency || defaultCurrency,
+      currencySymbol: pos.currencySymbol || defaultCurrencySymbol,
+      totalAmount,
+      status: 'pending_approval',
+      requisitioner: reqUser,
+      createdAt: now,
+      notes: params.notes || (params.referenceSolpedNumber ? `Creada con referencia a SOLPED #${params.referenceSolpedNumber} (ME51N)` : undefined)
+    };
+  });
+
+  const updatedSolpeds = [...allSolpeds, ...newPositions];
+  saveStoredSolpeds(updatedSolpeds);
+  return newPositions;
+}
+
