@@ -607,27 +607,58 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
                         <span className="text-[11px] text-blue-900 font-medium">
                           {supplier.billingCurrency === 'UF' && 'Unidad de Fomento'}
                           {supplier.billingCurrency === 'CLP' && 'Pesos Chilenos'}
-                          {supplier.billingCurrency === 'USD' && 'Dólares Estadounidenses'}
-                          {supplier.billingCurrency === 'EUR' && 'Euros Unión Europea'}
+                          {supplier.billingCurrency === 'USD' && 'Dólares'}
+                          {supplier.billingCurrency === 'EUR' && 'Euros'}
                           {supplier.billingCurrency === 'MXN' && 'Pesos Mexicanos'}
                         </span>
                       </div>
                     </div>
 
-                    {supplier.defaultHourlyRate && (
-                      <div className="text-right">
-                        <span className="text-[10px] text-blue-800 font-semibold block">Tarifa Referencial</span>
-                        <span className="font-mono font-bold text-slate-900 text-xs">
-                          {supplier.billingCurrency === 'CLP'
-                            ? `$${supplier.defaultHourlyRate.toLocaleString('es-CL')}`
-                            : `${supplier.defaultHourlyRate} ${supplier.billingCurrency}`} /hr
-                        </span>
-                      </div>
-                    )}
+                    <div className="text-right">
+                      {supplier.specialistRates && supplier.specialistRates.length > 0 ? (
+                        <>
+                          <span className="text-[10px] text-blue-800 font-semibold block">
+                            {supplier.specialistRates.length} Especialistas
+                          </span>
+                          <span className="font-mono font-bold text-slate-900 text-xs">
+                            {(() => {
+                              const rates = supplier.specialistRates.map(r => Number(r.hourlyRate || 0)).filter(r => r > 0);
+                              if (rates.length === 0) return supplier.defaultHourlyRate ? `${supplier.defaultHourlyRate} ${supplier.billingCurrency}/hr` : '-';
+                              const min = Math.min(...rates);
+                              const max = Math.max(...rates);
+                              return min === max 
+                                ? `${min.toLocaleString('es-CL')} ${supplier.billingCurrency}/hr` 
+                                : `${min.toLocaleString('es-CL')} - ${max.toLocaleString('es-CL')} ${supplier.billingCurrency}/hr`;
+                            })()}
+                          </span>
+                        </>
+                      ) : supplier.defaultHourlyRate ? (
+                        <>
+                          <span className="text-[10px] text-blue-800 font-semibold block">Tarifa Referencial</span>
+                          <span className="font-mono font-bold text-slate-900 text-xs">
+                            {supplier.billingCurrency === 'CLP'
+                              ? `$${supplier.defaultHourlyRate.toLocaleString('es-CL')}`
+                              : `${supplier.defaultHourlyRate} ${supplier.billingCurrency}`} /hr
+                          </span>
+                        </>
+                      ) : null}
+                    </div>
                   </div>
 
-                  {/* Specialties chips */}
-                  {supplier.specialties && supplier.specialties.length > 0 && (
+                  {/* Specialist Rates breakdown chips */}
+                  {supplier.specialistRates && supplier.specialistRates.length > 0 ? (
+                    <div className="mt-2.5 flex flex-wrap gap-1">
+                      {supplier.specialistRates.map(spec => (
+                        <span 
+                          key={spec.id}
+                          className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1"
+                        >
+                          <span className="font-bold text-blue-800">{spec.specialty.replace('DEV_', '').replace('SAP_', '')}</span>
+                          <span className="text-slate-500 font-mono text-[9px]">{spec.hourlyRate ? `${spec.hourlyRate} ${supplier.billingCurrency}/hr` : spec.seniority}</span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : supplier.specialties && supplier.specialties.length > 0 ? (
                     <div className="mt-2.5 flex flex-wrap gap-1">
                       {supplier.specialties.map(spec => (
                         <span 
@@ -638,7 +669,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
                         </span>
                       ))}
                     </div>
-                  )}
+                  ) : null}
 
                   {/* Block Warning Box if blocked */}
                   {isBlocked && (
@@ -725,11 +756,32 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
                         </span>
                       </td>
                       <td className="py-2 px-3 font-mono font-semibold text-slate-800 whitespace-nowrap">
-                        {supplier.defaultHourlyRate
-                          ? (supplier.billingCurrency === 'CLP' 
+                        {supplier.specialistRates && supplier.specialistRates.length > 0 ? (
+                          <div>
+                            <span className="text-xs font-bold text-slate-900 block">
+                              {(() => {
+                                const rates = supplier.specialistRates.map(r => Number(r.hourlyRate || 0)).filter(r => r > 0);
+                                if (rates.length === 0) return supplier.defaultHourlyRate ? `${supplier.defaultHourlyRate} ${supplier.billingCurrency}` : '-';
+                                const min = Math.min(...rates);
+                                const max = Math.max(...rates);
+                                return min === max 
+                                  ? `${min.toLocaleString('es-CL')} ${supplier.billingCurrency}` 
+                                  : `${min.toLocaleString('es-CL')} - ${max.toLocaleString('es-CL')} ${supplier.billingCurrency}`;
+                              })()}
+                            </span>
+                            <span className="text-[10px] text-blue-700 font-sans block">
+                              {supplier.specialistRates.length} especialist.{supplier.specialistRates.length > 1 ? 's' : ''}
+                            </span>
+                          </div>
+                        ) : supplier.defaultHourlyRate ? (
+                          <span>
+                            {supplier.billingCurrency === 'CLP' 
                               ? `$${supplier.defaultHourlyRate.toLocaleString('es-CL')}` 
-                              : `${supplier.defaultHourlyRate} ${supplier.billingCurrency}`)
-                          : '-'}
+                              : `${supplier.defaultHourlyRate} ${supplier.billingCurrency}`}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
                       </td>
                       <td className="py-2 px-3 text-slate-600 whitespace-nowrap">
                         <span>{supplier.country === 'Chile' ? '🇨🇱' : '🌐'} {supplier.country}</span>

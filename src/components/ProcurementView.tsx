@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   ShoppingBag, 
   FileText, 
@@ -18,6 +19,8 @@ import {
   Filter, 
   Search, 
   ChevronRight, 
+  ChevronDown,
+  ChevronUp,
   ShieldCheck, 
   ArrowUpRight, 
   FileCheck2, 
@@ -43,7 +46,11 @@ import {
   RefreshCw,
   Zap,
   Copy,
-  FilePlus
+  FilePlus,
+  Maximize2,
+  Minimize2,
+  Info,
+  UserCheck
 } from 'lucide-react';
 import { 
   Quotation, 
@@ -55,7 +62,8 @@ import {
   PurchaseOrderStatus,
   SupportedCurrency,
   SeniorityLevel,
-  SapModuleCode
+  SapModuleCode,
+  Professional
 } from '../types';
 import { 
   getStoredSolpeds, 
@@ -83,7 +91,9 @@ import { formatCurrency } from '../utils/calculations';
 import { CURRENCIES, convertCurrency, getBenchmarkRate } from '../utils/currencies';
 import { getCachedBancoCentralData } from '../services/bcentralService';
 import { getStoredModules, SapCatalogModule, getModuleBenchmarkRate } from '../data/sapModules';
+import { getStoredProfessionals, getProfessionalRate } from '../data/professionals';
 import { getStoredSuppliers } from '../data/suppliersMaster';
+import { getStoredClients } from '../data/clientsMaster';
 
 export interface SapSpecialtyPreset {
   id: string;
@@ -168,6 +178,131 @@ export const getSeniorityForPosition = (pos: ServicePurchaseRequisition | undefi
   return 'Senior';
 };
 
+interface FloatingMatchcodePortalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  anchorRef?: React.RefObject<HTMLElement | null>;
+  anchorEl?: HTMLElement | null;
+  width?: number;
+  minWidth?: number;
+  children: React.ReactNode;
+}
+
+export const FloatingMatchcodePortal: React.FC<FloatingMatchcodePortalProps> = ({
+  isOpen,
+  onClose,
+  anchorRef,
+  anchorEl,
+  width = 380,
+  minWidth = 320,
+  children
+}) => {
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const getAnchor = (): HTMLElement | null => {
+      if (anchorEl) return anchorEl;
+      if (anchorRef && anchorRef.current) return anchorRef.current;
+      return null;
+    };
+
+    const updatePosition = () => {
+      const el = getAnchor();
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const popWidth = Math.max(minWidth, Math.min(width, window.innerWidth - 32));
+      
+      // Horizontal: align with left of trigger, but keep strictly within window
+      let left = rect.left;
+      if (left + popWidth > window.innerWidth - 16) {
+        left = Math.max(16, window.innerWidth - popWidth - 16);
+      }
+
+      // Vertical: place below trigger if room, else place above
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const estimatedHeight = 350;
+
+      let top: number;
+      if (spaceBelow < 260 && spaceAbove > spaceBelow) {
+        top = Math.max(16, rect.top - estimatedHeight - 4);
+      } else {
+        top = rect.bottom + 4;
+      }
+
+      setCoords({ top, left, width: popWidth });
+    };
+
+    updatePosition();
+
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen, anchorRef, anchorEl, width, minWidth]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const getAnchor = (): HTMLElement | null => {
+      if (anchorEl) return anchorEl;
+      if (anchorRef && anchorRef.current) return anchorRef.current;
+      return null;
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const el = getAnchor();
+      if (
+        popoverRef.current && 
+        !popoverRef.current.contains(target) &&
+        (!el || !el.contains(target))
+      ) {
+        onClose();
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose, anchorRef, anchorEl]);
+
+  if (!isOpen || !coords) return null;
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      style={{
+        position: 'fixed',
+        top: `${coords.top}px`,
+        left: `${coords.left}px`,
+        width: `${coords.width}px`,
+        zIndex: 99999,
+      }}
+      className="bg-white rounded-xl shadow-2xl border border-slate-300 overflow-hidden animate-in fade-in zoom-in-95 duration-100 ring-1 ring-black/10 text-xs"
+    >
+      {children}
+    </div>,
+    document.body
+  );
+};
+
 export const ProcurementView: React.FC<ProcurementViewProps> = ({
   quotations,
   onSelectQuotation
@@ -201,6 +336,7 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
   const [currencyChangeNotice, setCurrencyChangeNotice] = useState<string | null>(null);
   const [standardRateNotice, setStandardRateNotice] = useState<string | null>(null);
   const [companyCatalogModules, setCompanyCatalogModules] = useState<SapCatalogModule[]>(() => getStoredModules());
+  const [catalogProfessionals, setCatalogProfessionals] = useState<Professional[]>(() => getStoredProfessionals());
 
   // ALV controls
   const [showAlvTotals, setShowAlvTotals] = useState<boolean>(true);
@@ -246,6 +382,7 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
 
   // Estados para Crear Nueva SOLPED (Transacción SAP ME51N)
   const [isCreatingSolped, setIsCreatingSolped] = useState(false);
+  const [isSolpedModalMaximized, setIsSolpedModalMaximized] = useState(false);
   const [createMode, setCreateMode] = useState<'blank' | 'reference'>('blank');
   const [selectedReferenceSolpedNum, setSelectedReferenceSolpedNum] = useState<string>('');
   
@@ -261,6 +398,50 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
   const [newSolpedCurrency, setNewSolpedCurrency] = useState<SupportedCurrency>('UF');
   const [newSolpedDocType, setNewSolpedDocType] = useState<'NB' | 'ZSRV'>('NB');
   const [newSolpedNotes, setNewSolpedNotes] = useState('');
+
+  // Estado para colapsar Cabecera en una sola línea (estilo SAP ME51N)
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+
+  // Estados para Matchcode (Ayuda de Búsqueda F4) en Cabecera SOLPED
+  const [showSupplierMatchcode, setShowSupplierMatchcode] = useState(false);
+  const [supplierMatchcodeFilter, setSupplierMatchcodeFilter] = useState('');
+  const [showClientMatchcode, setShowClientMatchcode] = useState(false);
+  const [clientMatchcodeFilter, setClientMatchcodeFilter] = useState('');
+
+  // Estados para Matchcode (Ayuda de Búsqueda F4) en Posiciones SOLPED (ME51N)
+  const [openPositionMatchcodeIdx, setOpenPositionMatchcodeIdx] = useState<number | null>(null);
+  const [positionMatchcodeFilter, setPositionMatchcodeFilter] = useState('');
+  const [positionAnchorEl, setPositionAnchorEl] = useState<HTMLElement | null>(null);
+
+  // Estados para Matchcode (Ayuda de Búsqueda F4) en Posición Activa ME52N
+  const [showMe52nProfileMatchcode, setShowMe52nProfileMatchcode] = useState(false);
+  const [me52nProfileMatchcodeFilter, setMe52nProfileMatchcodeFilter] = useState('');
+
+  const supplierMatchcodeRef = useRef<HTMLDivElement>(null);
+  const clientMatchcodeRef = useRef<HTMLDivElement>(null);
+  const positionMatchcodeRef = useRef<HTMLDivElement>(null);
+  const me52nProfileMatchcodeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (supplierMatchcodeRef.current && !supplierMatchcodeRef.current.contains(event.target as Node)) {
+        setShowSupplierMatchcode(false);
+      }
+      if (clientMatchcodeRef.current && !clientMatchcodeRef.current.contains(event.target as Node)) {
+        setShowClientMatchcode(false);
+      }
+      if (positionMatchcodeRef.current && !positionMatchcodeRef.current.contains(event.target as Node)) {
+        setOpenPositionMatchcodeIdx(null);
+      }
+      if (me52nProfileMatchcodeRef.current && !me52nProfileMatchcodeRef.current.contains(event.target as Node)) {
+        setShowMe52nProfileMatchcode(false);
+      }
+    };
+    if (showSupplierMatchcode || showClientMatchcode || openPositionMatchcodeIdx !== null || showMe52nProfileMatchcode) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showSupplierMatchcode, showClientMatchcode, openPositionMatchcodeIdx, showMe52nProfileMatchcode]);
 
   // Posiciones de la nueva SOLPED
   const [newSolpedPositions, setNewSolpedPositions] = useState<CreateSolpedPositionItem[]>([]);
@@ -346,6 +527,8 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
       ]);
     }
 
+    setCatalogProfessionals(getStoredProfessionals());
+    setCompanyCatalogModules(getStoredModules());
     setIsCreatingSolped(true);
   };
 
@@ -401,18 +584,151 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
     }));
   };
 
-  const handleSelectPresetForPosition = (index: number, presetId: string) => {
+  const handleSelectProfileForPosition = (index: number, selectedValue: string) => {
+    if (!selectedValue) {
+      setNewSolpedPositions(prev => prev.map((pos, idx) => {
+        if (idx !== index) return pos;
+        return {
+          ...pos,
+          professionalId: undefined,
+          professionalName: undefined
+        };
+      }));
+      return;
+    }
+
+    // 1. Perfil seleccionado desde el Catálogo de Profesionales
+    if (selectedValue.startsWith('prof:')) {
+      const profId = selectedValue.replace('prof:', '');
+      const prof = catalogProfessionals.find(p => p.id === profId);
+      if (!prof) return;
+
+      // Arrastrar la tarifa exacta que ese perfil tiene definida para la moneda activa
+      const rate = getProfessionalRate(prof, newSolpedCurrency);
+
+      setNewSolpedPositions(prev => prev.map((pos, idx) => {
+        if (idx !== index) return pos;
+        return {
+          ...pos,
+          roleTitle: `${prof.name} - ${prof.roleTitle}`,
+          moduleCode: prof.moduleCode,
+          moduleName: prof.moduleName,
+          seniority: prof.seniority,
+          hourlyRate: rate,
+          currency: newSolpedCurrency,
+          currencySymbol: newSolpedCurrency === 'UF' ? 'UF' : '$',
+          professionalId: prof.id,
+          professionalName: prof.name
+        };
+      }));
+      return;
+    }
+
+    // 2. Módulos & Especialidades SAP de la Empresa (Benchmark)
+    if (selectedValue.startsWith('mod:')) {
+      const modCode = selectedValue.replace('mod:', '');
+      const mod = companyCatalogModules.find(m => m.code === modCode);
+      if (!mod) return;
+
+      const currentPos = newSolpedPositions[index];
+      const seniority = currentPos?.seniority || 'Senior';
+      const rate = getModuleBenchmarkRate(mod, seniority, newSolpedCurrency);
+
+      setNewSolpedPositions(prev => prev.map((pos, idx) => {
+        if (idx !== index) return pos;
+        return {
+          ...pos,
+          roleTitle: mod.name,
+          moduleCode: mod.code,
+          moduleName: mod.name,
+          hourlyRate: rate > 0 ? rate : pos.hourlyRate,
+          currency: newSolpedCurrency,
+          currencySymbol: newSolpedCurrency === 'UF' ? 'UF' : '$',
+          professionalId: undefined,
+          professionalName: undefined
+        };
+      }));
+      return;
+    }
+
+    // 3. Presets Rápidos SAP
+    const presetId = selectedValue.replace('preset:', '');
+    const preset = SAP_SPECIALTY_PRESETS.find(p => p.id === presetId || p.label === selectedValue);
+    if (preset) {
+      const currentPos = newSolpedPositions[index];
+      const seniority = currentPos?.seniority || 'Senior';
+      const rate = getBenchmarkRate(preset.code as SapModuleCode, seniority, newSolpedCurrency);
+
+      setNewSolpedPositions(prev => prev.map((pos, idx) => {
+        if (idx !== index) return pos;
+        return {
+          ...pos,
+          roleTitle: preset.label,
+          moduleCode: preset.code as SapModuleCode,
+          moduleName: preset.moduleName,
+          hourlyRate: rate > 0 ? rate : pos.hourlyRate,
+          currency: newSolpedCurrency,
+          currencySymbol: newSolpedCurrency === 'UF' ? 'UF' : '$',
+          professionalId: undefined,
+          professionalName: undefined
+        };
+      }));
+    }
+  };
+
+  const handleSelectPresetForPosition = handleSelectProfileForPosition;
+
+  const handleDuplicateSolpedPosition = (index: number) => {
+    const item = newSolpedPositions[index];
+    if (!item) return;
+    setNewSolpedPositions(prev => [
+      ...prev.slice(0, index + 1),
+      { ...item },
+      ...prev.slice(index + 1)
+    ]);
+  };
+
+  const handleAddPresetPosition = (presetId: string) => {
     const preset = SAP_SPECIALTY_PRESETS.find(p => p.id === presetId);
     if (!preset) return;
-    setNewSolpedPositions(prev => prev.map((pos, idx) => {
-      if (idx !== index) return pos;
-      return {
-        ...pos,
+    const defaultRate = newSolpedCurrency === 'UF' ? 2.0 : newSolpedCurrency === 'USD' ? 45 : 35000;
+    setNewSolpedPositions(prev => [
+      ...prev,
+      {
         roleTitle: preset.label,
         moduleCode: preset.code as SapModuleCode,
-        moduleName: preset.moduleName
-      };
+        moduleName: preset.moduleName,
+        seniority: 'Senior',
+        hours: 80,
+        hourlyRate: defaultRate,
+        currency: newSolpedCurrency,
+        currencySymbol: newSolpedCurrency === 'UF' ? 'UF' : '$',
+        costCenter: newSolpedCeco || 'CC-10100'
+      }
+    ]);
+  };
+
+  const handleImportSupplierSpecialists = (supplierIdOrTaxId: string) => {
+    const supps = getStoredSuppliers();
+    const found = supps.find(s => s.id === supplierIdOrTaxId || s.taxId === supplierIdOrTaxId || s.legalName.toLowerCase() === supplierIdOrTaxId.toLowerCase());
+    if (!found || !found.specialistRates || found.specialistRates.length === 0) return;
+    
+    const imported: CreateSolpedPositionItem[] = found.specialistRates.map(sr => ({
+      roleTitle: sr.roleTitle || sr.specialty,
+      moduleCode: sr.specialty as SapModuleCode,
+      moduleName: sr.roleTitle || sr.specialty,
+      seniority: sr.seniority || 'Senior',
+      hours: 80,
+      hourlyRate: sr.hourlyRate || (found.defaultHourlyRate || 2.0),
+      currency: (found.billingCurrency || newSolpedCurrency) as SupportedCurrency,
+      currencySymbol: (found.billingCurrency || newSolpedCurrency) === 'UF' ? 'UF' : '$',
+      costCenter: newSolpedCeco || 'CC-10100'
     }));
+
+    setNewSolpedPositions(imported);
+    if (found.billingCurrency) {
+      setNewSolpedCurrency(found.billingCurrency);
+    }
   };
 
   const handleSaveNewSolped = () => {
@@ -542,12 +858,31 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
   const handleSelectSpecialtyForActivePos = (
     specialtyTitle: string,
     optModuleCode?: string,
-    optModuleName?: string
+    optModuleName?: string,
+    optProfId?: string
   ) => {
     let mCode = optModuleCode;
     let mName = optModuleName;
-    const lower = specialtyTitle.toLowerCase();
-    if (!mCode) {
+    let profObj: Professional | undefined;
+
+    if (optProfId) {
+      profObj = catalogProfessionals.find(p => p.id === optProfId);
+    } else if (specialtyTitle.startsWith('prof:')) {
+      const pId = specialtyTitle.replace('prof:', '');
+      profObj = catalogProfessionals.find(p => p.id === pId);
+    }
+
+    let matchCompanyMod = companyCatalogModules.find(m => m.code === mCode || m.name === specialtyTitle);
+
+    if (profObj) {
+      mCode = profObj.moduleCode;
+      mName = profObj.moduleName;
+      specialtyTitle = `${profObj.name} - ${profObj.roleTitle}`;
+    } else if (matchCompanyMod) {
+      mCode = matchCompanyMod.code;
+      mName = matchCompanyMod.name;
+    } else if (!mCode) {
+      const lower = specialtyTitle.toLowerCase();
       // First check dynamic company catalog modules
       const matchModule = companyCatalogModules.find(
         m => m.name.toLowerCase() === lower || 
@@ -557,6 +892,7 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
              lower.includes(m.code.toLowerCase())
       );
       if (matchModule) {
+        matchCompanyMod = matchModule;
         mCode = matchModule.code;
         mName = matchModule.name;
       } else {
@@ -572,16 +908,39 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
 
     setEditingSolpedPositions(prev => prev.map(p => {
       if (p.id === selectedPosId) {
+        let r = p.hourlyRate;
+        if (profObj) {
+          r = getProfessionalRate(profObj, p.currency || 'UF');
+        } else if (matchCompanyMod) {
+          const bench = getModuleBenchmarkRate(matchCompanyMod, p.seniority || 'Senior', p.currency || 'UF');
+          if (bench > 0) r = bench;
+        }
         return {
           ...p,
           roleTitle: specialtyTitle,
           moduleCode: mCode || p.moduleCode,
-          moduleName: mName || p.moduleName
+          moduleName: mName || p.moduleName,
+          seniority: profObj ? profObj.seniority : p.seniority,
+          hourlyRate: r,
+          totalAmount: (p.hours || 0) * r,
+          professionalId: profObj ? profObj.id : p.professionalId,
+          professionalName: profObj ? profObj.name : p.professionalName
         };
       }
       return p;
     }));
     setEditSolpedRoleTitle(specialtyTitle);
+    if (profObj) {
+      const active = editingSolpedPositions.find(p => p.id === selectedPosId);
+      const curr = active?.currency || 'UF';
+      const r = getProfessionalRate(profObj, curr);
+      setEditSolpedRate(r);
+    } else if (matchCompanyMod) {
+      const active = editingSolpedPositions.find(p => p.id === selectedPosId);
+      const curr = active?.currency || 'UF';
+      const r = getModuleBenchmarkRate(matchCompanyMod, active?.seniority || 'Senior', curr);
+      if (r > 0) setEditSolpedRate(r);
+    }
   };
 
   // Convert currency of SOLPED (only allowed if no PO has been created yet)
@@ -2093,17 +2452,28 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
         )}
       </div>
 
-      {/* MODAL 0: CREAR SOLPED (ME51N) - EN BLANCO O CON REFERENCIA */}
+      {/* MODAL 0: CREAR SOLPED (ME51N) - ALV WORKSPACE >= 90% DE PANTALLA */}
       {isCreatingSolped && (() => {
         const totalHrs = newSolpedPositions.reduce((acc, p) => acc + (Number(p.hours) || 0), 0);
         const totalAmt = newSolpedPositions.reduce((acc, p) => acc + (Number(p.hours) || 0) * (Number(p.hourlyRate) || 0), 0);
         const uniqueSolpedsList: ServicePurchaseRequisition[] = Array.from(new Map<string, ServicePurchaseRequisition>(solpeds.map(s => [s.solpedNumber, s])).values());
+        
+        const allSuppliers = getStoredSuppliers();
+        const allClients = getStoredClients();
+        const matchedSupplier = allSuppliers.find(
+          s => s.legalName.toLowerCase() === newSolpedSupplier.toLowerCase() || 
+               (newSolpedSupplierTaxId && s.taxId.trim() === newSolpedSupplierTaxId.trim())
+        );
 
         return (
-          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-150">
-            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-3 overflow-hidden animate-in fade-in duration-150">
+            <div className={`bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-200 animate-in zoom-in-95 duration-150 ${
+              isSolpedModalMaximized
+                ? 'w-[98vw] h-[98vh] max-w-[98vw] max-h-[98vh]'
+                : 'w-[94vw] h-[92vh] max-w-[95vw] max-h-[95vh]'
+            }`}>
               {/* Modal Header */}
-              <div className="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between shrink-0 border-b border-slate-800">
+              <div className="bg-slate-900 text-white px-5 py-3 flex items-center justify-between shrink-0 border-b border-slate-800">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-blue-600/30 border border-blue-400/40 flex items-center justify-center shrink-0">
                     <FilePlus className="w-5 h-5 text-blue-300" />
@@ -2122,444 +2492,1101 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                     </p>
                   </div>
                 </div>
-                <button 
-                  type="button"
-                  onClick={() => setIsCreatingSolped(false)}
-                  className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+
+                <div className="flex items-center gap-2.5">
+                  <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-mono text-slate-300">
+                    <span className="text-blue-400 font-bold">{newSolpedPositions.length} {newSolpedPositions.length === 1 ? 'pos' : 'pos'}</span>
+                    <span className="text-slate-500">•</span>
+                    <span>{totalHrs} HUR</span>
+                    <span className="text-slate-500">•</span>
+                    <span className="text-emerald-400 font-bold">
+                      {formatCurrency(totalAmt, newSolpedCurrency, newSolpedCurrency === 'UF' ? 'UF' : '$')}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsSolpedModalMaximized(!isSolpedModalMaximized)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                    title={isSolpedModalMaximized ? "Restaurar tamaño (94%)" : "Maximizar a pantalla completa (98%)"}
+                  >
+                    {isSolpedModalMaximized ? (
+                      <Minimize2 className="w-4 h-4" />
+                    ) : (
+                      <Maximize2 className="w-4 h-4" />
+                    )}
+                  </button>
+
+                  <button 
+                    type="button"
+                    onClick={() => setIsCreatingSolped(false)}
+                    className="text-slate-400 hover:text-white p-1.5 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                    title="Cerrar modal"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
-              {/* Modal Body: Scrollable */}
-              <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-4 text-xs">
-                {/* Modalidad de Creación (Selector En Blanco vs Con Referencia) */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    <span className="font-bold text-slate-700 text-xs">Modalidad de Creación:</span>
-                    <div className="inline-flex p-0.5 bg-slate-200 rounded-lg border border-slate-300">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCreateMode('blank');
-                        }}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                          createMode === 'blank'
-                            ? 'bg-white text-blue-700 shadow-2xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>En Blanco (Desde Cero)</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCreateMode('reference');
-                          if (!selectedReferenceSolpedNum && uniqueSolpedsList.length > 0) {
-                            applyReferenceSolped(uniqueSolpedsList[0].solpedNumber);
-                          }
-                        }}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                          createMode === 'reference'
-                            ? 'bg-white text-blue-700 shadow-2xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        <Copy className="w-3.5 h-3.5 text-blue-600" />
-                        <span>Con Referencia a SOLPED Anterior</span>
-                      </button>
+              {/* Modal Body: Split 2-Column Responsive Workspace */}
+              <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
+                {/* Main Content Area (Left, ~72% Width) */}
+                <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden p-3 sm:p-4 gap-2.5 text-xs bg-slate-50/40">
+                  {/* Bloque Superior: Modalidad y Datos de Cabecera (shrink-0) */}
+                  <div className="shrink-0 space-y-2">
+                    {/* Modalidad de Creación (Selector En Blanco vs Con Referencia) */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span className="font-bold text-slate-700 text-xs">Modalidad de Creación:</span>
+                      <div className="inline-flex p-0.5 bg-slate-200 rounded-lg border border-slate-300">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCreateMode('blank');
+                          }}
+                          className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                            createMode === 'blank'
+                              ? 'bg-white text-blue-700 shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>En Blanco (Desde Cero)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCreateMode('reference');
+                            if (!selectedReferenceSolpedNum && uniqueSolpedsList.length > 0) {
+                              applyReferenceSolped(uniqueSolpedsList[0].solpedNumber);
+                            }
+                          }}
+                          className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                            createMode === 'reference'
+                              ? 'bg-white text-blue-700 shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          <Copy className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Con Referencia a SOLPED Anterior (ME53N)</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono">
+                      <span>Tipo Doc: <strong className="text-slate-700">{newSolpedDocType}</strong></span>
+                      <span>•</span>
+                      <span>Posición: <strong className="text-blue-700">D (Servicios Externos)</strong></span>
+                      <span>•</span>
+                      <span>Imputación: <strong className="text-indigo-700">PEP 'P'</strong></span>
                     </div>
                   </div>
 
-                  <div className="text-[11px] text-slate-500 font-mono">
-                    Tipo Doc: <span className="font-bold text-slate-700">{newSolpedDocType}</span> • Posición: <span className="font-bold text-blue-700">D (Servicios)</span>
-                  </div>
-                </div>
-
-                {/* Si es con Referencia: Selector de SOLPED Existente */}
-                {createMode === 'reference' && (
-                  <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-2 animate-in fade-in">
-                    <div className="flex items-center justify-between">
-                      <label className="block text-[11px] font-bold text-blue-950">
-                        Seleccionar SOLPED Modelo de Referencia (ME53N):
-                      </label>
-                      <span className="text-[10px] text-blue-700 font-medium">
-                        {uniqueSolpedsList.length} SOLPEDs disponibles para clonar
-                      </span>
+                  {/* Si es con Referencia: Selector de SOLPED Existente */}
+                  {createMode === 'reference' && (
+                    <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-2 animate-in fade-in">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[11px] font-bold text-blue-950">
+                          Seleccionar SOLPED Modelo de Referencia (ME53N):
+                        </label>
+                        <span className="text-[10px] text-blue-700 font-medium">
+                          {uniqueSolpedsList.length} SOLPEDs disponibles para clonar
+                        </span>
+                      </div>
+                      <select
+                        value={selectedReferenceSolpedNum}
+                        onChange={(e) => applyReferenceSolped(e.target.value)}
+                        className="w-full bg-white border border-blue-300 rounded-lg p-2 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                      >
+                        {uniqueSolpedsList.map(sp => {
+                          const count = solpeds.filter(s => s.solpedNumber === sp.solpedNumber).length;
+                          return (
+                            <option key={sp.solpedNumber} value={sp.solpedNumber}>
+                              SOLPED #{sp.solpedNumber} — {sp.supplierName} • {sp.clientCompanyName} ({sp.projectTitle || sp.quotationCode}) [{count} {count === 1 ? 'posición' : 'posiciones'}]
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <div className="text-[11px] text-blue-800 flex items-center gap-1.5 bg-blue-100/60 p-2 rounded-lg">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <span>
+                          Datos clonados desde <strong>SOLPED #{selectedReferenceSolpedNum}</strong>. Se generará un nuevo correlativo oficial SAP (ME51N) conservando o adaptando roles, horas y tarifas.
+                        </span>
+                      </div>
                     </div>
-                    <select
-                      value={selectedReferenceSolpedNum}
-                      onChange={(e) => applyReferenceSolped(e.target.value)}
-                      className="w-full bg-white border border-blue-300 rounded-lg p-2 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  )}
+
+                  {/* Tarjeta de Datos de Cabecera (Header Data) - Colapsable en 1 línea (SAP ME51N) */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl transition-all shadow-2xs">
+                    {/* Barra Superior / Tira Resumen de Cabecera en 1 sola línea */}
+                    <div 
+                      onClick={() => setIsHeaderCollapsed(prev => !prev)}
+                      className="px-3.5 py-2 flex items-center justify-between cursor-pointer hover:bg-slate-100/90 transition-colors select-none"
                     >
-                      {uniqueSolpedsList.map(sp => {
-                        const count = solpeds.filter(s => s.solpedNumber === sp.solpedNumber).length;
-                        return (
-                          <option key={sp.solpedNumber} value={sp.solpedNumber}>
-                            SOLPED #{sp.solpedNumber} — {sp.supplierName} • {sp.clientCompanyName} ({sp.projectTitle || sp.quotationCode}) [{count} {count === 1 ? 'posición' : 'posiciones'}]
-                          </option>
-                        );
-                      })}
-                    </select>
-                    <div className="text-[11px] text-blue-800 flex items-center gap-1.5 bg-blue-100/60 p-2 rounded-lg">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                      <span>
-                        Datos clonados desde <strong>SOLPED #{selectedReferenceSolpedNum}</strong>. Se generará un nuevo correlativo oficial SAP (ME51N) conservando o adaptando roles, horas y tarifas.
-                      </span>
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className="p-1 rounded bg-blue-100 text-blue-700 shrink-0">
+                          <Building2 className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="font-bold text-slate-800 text-xs">Datos de Cabecera (Header Data)</span>
+                          <span className="text-[10px] text-slate-400 font-mono hidden md:inline">Imputación 'P' • Categoría 'D'</span>
+                        </div>
+
+                        {/* Tira Resumen en 1 sola línea cuando está colapsado */}
+                        {isHeaderCollapsed && (
+                          <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-300 text-[11px] text-slate-600 truncate flex-1 animate-in fade-in duration-150">
+                            <span className="truncate">
+                              <span className="text-slate-400">Prov:</span> <strong className="text-slate-800 font-semibold">{newSolpedSupplier || 'Sin proveedor'}</strong>
+                              {newSolpedSupplierTaxId ? <span className="font-mono text-slate-500 text-[10px]"> ({newSolpedSupplierTaxId})</span> : ''}
+                            </span>
+                            <span className="text-slate-300">•</span>
+                            <span className="truncate">
+                              <span className="text-slate-400">Cliente:</span> <strong className="text-slate-800 font-semibold">{newSolpedClientName || 'N/A'}</strong>
+                            </span>
+                            <span className="text-slate-300">•</span>
+                            <span className="shrink-0 font-mono">
+                              <span className="text-slate-400">PEP:</span> <strong className="text-blue-700">{newSolpedPep || 'N/A'}</strong>
+                            </span>
+                            <span className="text-slate-300">•</span>
+                            <span className="shrink-0 font-mono">
+                              <span className="text-slate-400">CeCo:</span> <strong className="text-slate-700">{newSolpedCeco || 'CC-10100'}</strong>
+                            </span>
+                            <span className="text-slate-300">•</span>
+                            <span className="shrink-0 px-1.5 py-0.5 rounded font-mono font-bold text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
+                              {newSolpedCurrency}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        {isHeaderCollapsed ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsHeaderCollapsed(false);
+                            }}
+                            className="px-2.5 py-1 bg-white hover:bg-blue-50 border border-blue-200 hover:border-blue-300 rounded-lg text-[11px] font-bold text-blue-700 flex items-center gap-1 transition-colors shadow-2xs cursor-pointer"
+                            title="Expandir cabecera para ver y editar los campos"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                            <span>Expandir Cabecera</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsHeaderCollapsed(true);
+                            }}
+                            className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-[11px] font-medium text-slate-600 flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Colapsar cabecera en una sola línea para dar más espacio a las posiciones"
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                            <span>Colapsar en 1 línea</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Formulario Completo de Cabecera (Visible al estar expandido) */}
+                    {!isHeaderCollapsed && (
+                      <div className="p-3.5 pt-2 border-t border-slate-200 space-y-3 animate-in fade-in duration-150">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                          Proveedor / Subcontratista *
+                        </label>
+                        <div className="relative" ref={supplierMatchcodeRef}>
+                          <input
+                            type="text"
+                            value={newSolpedSupplier}
+                            onChange={(e) => setNewSolpedSupplier(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'F4') {
+                                e.preventDefault();
+                                setShowSupplierMatchcode(prev => !prev);
+                                setSupplierMatchcodeFilter('');
+                              }
+                            }}
+                            placeholder="Ej. Partner Subcontratista SAP"
+                            className="w-full bg-white border border-slate-300 rounded-lg pl-2.5 pr-14 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowSupplierMatchcode(prev => !prev);
+                              setSupplierMatchcodeFilter('');
+                            }}
+                            className={`absolute right-1 top-1/2 -translate-y-1/2 h-6 px-1.5 flex items-center gap-1 rounded text-xs transition-colors cursor-pointer ${
+                              showSupplierMatchcode 
+                                ? 'bg-blue-600 text-white shadow-2xs' 
+                                : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'
+                            }`}
+                            title="Ayuda para búsqueda F4 (Matchcode Proveedores SAP)"
+                          >
+                            <Search className="w-3.5 h-3.5" />
+                            <span className="text-[9px] font-mono font-bold tracking-tighter opacity-80">F4</span>
+                          </button>
+
+                          {/* Popover Matchcode Proveedores (F4) */}
+                          <FloatingMatchcodePortal
+                            isOpen={showSupplierMatchcode}
+                            onClose={() => setShowSupplierMatchcode(false)}
+                            anchorRef={supplierMatchcodeRef}
+                            width={380}
+                          >
+                            <div className="bg-slate-900 text-white px-3 py-2 flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <Search className="w-3.5 h-3.5 text-blue-400" />
+                                <span className="font-bold text-xs">Ayuda para Búsqueda (F4)</span>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                Maestro de Proveedores ({allSuppliers.length})
+                              </span>
+                            </div>
+                            <div className="p-2 border-b border-slate-200 bg-slate-50">
+                              <input
+                                type="text"
+                                value={supplierMatchcodeFilter}
+                                onChange={(e) => setSupplierMatchcodeFilter(e.target.value)}
+                                placeholder="Filtrar por nombre o RUT..."
+                                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') setShowSupplierMatchcode(false);
+                                }}
+                              />
+                            </div>
+                            <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                              {allSuppliers
+                                .filter(s => {
+                                  if (!supplierMatchcodeFilter.trim()) return true;
+                                  const q = supplierMatchcodeFilter.toLowerCase();
+                                  return s.legalName.toLowerCase().includes(q) ||
+                                         (s.fantasyName && s.fantasyName.toLowerCase().includes(q)) ||
+                                         s.taxId.toLowerCase().includes(q);
+                                })
+                                .map(s => (
+                                  <div
+                                    key={s.id}
+                                    onClick={() => {
+                                      if (s.isBlocked) {
+                                        alert(`Atención SAP XK05: El proveedor "${s.legalName}" se encuentra BLOQUEADO en el Maestro de Proveedores por el motivo:\n\n"${s.blockingReason || 'Bloqueo administrativo'}"\n\nNo se recomienda cursar SOLPEDs ni pedidos a proveedores bloqueados.`);
+                                      }
+                                      setNewSolpedSupplier(s.legalName);
+                                      setNewSolpedSupplierTaxId(s.taxId);
+                                      if (s.billingCurrency) {
+                                        setNewSolpedCurrency(s.billingCurrency);
+                                      }
+                                      setShowSupplierMatchcode(false);
+                                      setSupplierMatchcodeFilter('');
+                                    }}
+                                    className={`px-3 py-2 text-xs hover:bg-blue-50 cursor-pointer transition-colors flex items-center justify-between gap-2 ${
+                                      s.isBlocked ? 'bg-rose-50/60' : ''
+                                    }`}
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="font-semibold text-slate-800 truncate flex items-center gap-1.5">
+                                        {s.isBlocked && (
+                                          <span className="text-[10px] font-bold text-rose-600 bg-rose-100 px-1 py-0.5 rounded">
+                                            BLOQUEADO
+                                          </span>
+                                        )}
+                                        <span>{s.legalName}</span>
+                                      </div>
+                                      <div className="text-[10px] text-slate-500 font-mono">
+                                        RUT: {s.taxId} {s.vendorCode ? `• ${s.vendorCode}` : ''}
+                                      </div>
+                                    </div>
+                                    <span className="shrink-0 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                                      {s.billingCurrency}
+                                    </span>
+                                  </div>
+                                ))}
+                              {allSuppliers.filter(s => {
+                                if (!supplierMatchcodeFilter.trim()) return true;
+                                const q = supplierMatchcodeFilter.toLowerCase();
+                                return s.legalName.toLowerCase().includes(q) ||
+                                       (s.fantasyName && s.fantasyName.toLowerCase().includes(q)) ||
+                                       s.taxId.toLowerCase().includes(q);
+                              }).length === 0 && (
+                                <div className="p-4 text-center text-xs text-slate-400">
+                                  No se encontraron proveedores que coincidan con la búsqueda.
+                                </div>
+                              )}
+                            </div>
+                          </FloatingMatchcodePortal>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                          RUT / Tax ID Proveedor
+                        </label>
+                        <input
+                          type="text"
+                          value={newSolpedSupplierTaxId}
+                          onChange={(e) => setNewSolpedSupplierTaxId(e.target.value)}
+                          placeholder="Ej. 76.543.210-K"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                          Cotización Comercial Asociada
+                        </label>
+                        {quotations && quotations.length > 0 ? (
+                          <select
+                            value={newSolpedQuotationId}
+                            onChange={(e) => handleSelectQuotationForSolped(e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                          >
+                            <option value="">-- Sin cotización vinculada --</option>
+                            {quotations.map(q => (
+                              <option key={q.id} value={q.id}>
+                                {q.quotationCode || q.id} - {q.clientCompanyName}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={newSolpedQuotationCode}
+                            onChange={(e) => setNewSolpedQuotationCode(e.target.value)}
+                            placeholder="COT-SAP-2026-001"
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                          />
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                          Moneda de la SOLPED
+                        </label>
+                        <select
+                          value={newSolpedCurrency}
+                          onChange={(e) => {
+                            const curr = e.target.value as SupportedCurrency;
+                            const oldCurr = newSolpedCurrency;
+                            setNewSolpedCurrency(curr);
+                            const symbol = curr === 'UF' ? 'UF' : '$';
+                            setNewSolpedPositions(prev => prev.map(p => {
+                              let newRate = p.hourlyRate;
+                              if (p.professionalId) {
+                                const prof = catalogProfessionals.find(cp => cp.id === p.professionalId);
+                                if (prof) {
+                                  newRate = getProfessionalRate(prof, curr);
+                                }
+                              } else if (p.hourlyRate > 0) {
+                                newRate = convertCurrency(p.hourlyRate, oldCurr, curr);
+                              }
+                              return {
+                                ...p,
+                                hourlyRate: newRate,
+                                currency: curr,
+                                currencySymbol: symbol
+                              };
+                            }));
+                          }}
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                        >
+                          <option value="UF">🇨🇱 UF (Unidad de Fomento)</option>
+                          <option value="CLP">🇨🇱 CLP (Peso Chileno)</option>
+                          <option value="USD">🇺🇸 USD (Dólar Estadounidense)</option>
+                          <option value="EUR">🇪🇺 EUR (Euro)</option>
+                          <option value="MXN">🇲🇽 MXN (Peso Mexicano)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                          Cliente / Razón Social Mandante
+                        </label>
+                        <div className="relative" ref={clientMatchcodeRef}>
+                          <input
+                            type="text"
+                            value={newSolpedClientName}
+                            onChange={(e) => setNewSolpedClientName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'F4') {
+                                e.preventDefault();
+                                setShowClientMatchcode(prev => !prev);
+                                setClientMatchcodeFilter('');
+                              }
+                            }}
+                            placeholder="Ej. Inversiones Twin Ducks Capital"
+                            className="w-full bg-white border border-slate-300 rounded-lg pl-2.5 pr-14 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowClientMatchcode(prev => !prev);
+                              setClientMatchcodeFilter('');
+                            }}
+                            className={`absolute right-1 top-1/2 -translate-y-1/2 h-6 px-1.5 flex items-center gap-1 rounded text-xs transition-colors cursor-pointer ${
+                              showClientMatchcode 
+                                ? 'bg-blue-600 text-white shadow-2xs' 
+                                : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'
+                            }`}
+                            title="Ayuda para búsqueda F4 (Matchcode Clientes SAP)"
+                          >
+                            <Search className="w-3.5 h-3.5" />
+                            <span className="text-[9px] font-mono font-bold tracking-tighter opacity-80">F4</span>
+                          </button>
+
+                          {/* Popover Matchcode Clientes (F4) */}
+                          <FloatingMatchcodePortal
+                            isOpen={showClientMatchcode}
+                            onClose={() => setShowClientMatchcode(false)}
+                            anchorRef={clientMatchcodeRef}
+                            width={380}
+                          >
+                            <div className="bg-slate-900 text-white px-3 py-2 flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <Search className="w-3.5 h-3.5 text-blue-400" />
+                                <span className="font-bold text-xs">Ayuda para Búsqueda (F4)</span>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                Maestro de Clientes ({allClients.length})
+                              </span>
+                            </div>
+                            <div className="p-2 border-b border-slate-200 bg-slate-50">
+                              <input
+                                type="text"
+                                value={clientMatchcodeFilter}
+                                onChange={(e) => setClientMatchcodeFilter(e.target.value)}
+                                placeholder="Filtrar por razón social, RUT o comuna..."
+                                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') setShowClientMatchcode(false);
+                                }}
+                              />
+                            </div>
+                            <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                              {allClients
+                                .filter(c => {
+                                  if (!clientMatchcodeFilter.trim()) return true;
+                                  const q = clientMatchcodeFilter.toLowerCase();
+                                  return c.companyName.toLowerCase().includes(q) ||
+                                         (c.fantasyName && c.fantasyName.toLowerCase().includes(q)) ||
+                                         (c.taxId && c.taxId.toLowerCase().includes(q)) ||
+                                         (c.comuna && c.comuna.toLowerCase().includes(q));
+                                })
+                                .map(c => {
+                                  const selectedName = c.companyName || c.fantasyName || '';
+                                  return (
+                                    <div
+                                      key={c.id}
+                                      onClick={() => {
+                                        setNewSolpedClientName(selectedName);
+
+                                        // Si existe una cotización asociada a este cliente y no se ha seleccionado una todavía
+                                        if (quotations && quotations.length > 0) {
+                                          const matchingQuote = quotations.find(
+                                            q => q.clientCompanyName?.toLowerCase() === selectedName.toLowerCase() ||
+                                                 (c.fantasyName && q.clientCompanyName?.toLowerCase().includes(c.fantasyName.toLowerCase())) ||
+                                                 (c.companyName && q.clientCompanyName?.toLowerCase().includes(c.companyName.toLowerCase()))
+                                          );
+                                          if (matchingQuote) {
+                                            handleSelectQuotationForSolped(matchingQuote.id);
+                                          }
+                                        }
+
+                                        // Si el proyecto está vacío, sugerir título corporativo
+                                        if (!newSolpedProjectTitle && (c.fantasyName || c.companyName)) {
+                                          setNewSolpedProjectTitle(`Consultoría SAP - ${c.fantasyName || c.companyName}`);
+                                        }
+
+                                        setShowClientMatchcode(false);
+                                        setClientMatchcodeFilter('');
+                                      }}
+                                      className="px-3 py-2 text-xs hover:bg-blue-50 cursor-pointer transition-colors flex items-center justify-between gap-2"
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <div className="font-semibold text-slate-800 truncate">
+                                          {selectedName}
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 font-mono truncate">
+                                          {c.taxId ? `RUT: ${c.taxId} ` : ''}{c.industry ? `• ${c.industry}` : ''}{c.city ? ` (${c.city})` : ''}
+                                        </div>
+                                      </div>
+                                      {c.country && (
+                                        <span className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                                          {c.country}
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              {allClients.filter(c => {
+                                if (!clientMatchcodeFilter.trim()) return true;
+                                const q = clientMatchcodeFilter.toLowerCase();
+                                return c.companyName.toLowerCase().includes(q) ||
+                                       (c.fantasyName && c.fantasyName.toLowerCase().includes(q)) ||
+                                       (c.taxId && c.taxId.toLowerCase().includes(q)) ||
+                                       (c.comuna && c.comuna.toLowerCase().includes(q));
+                              }).length === 0 && (
+                                <div className="p-4 text-center text-xs text-slate-400">
+                                  No se encontraron clientes que coincidan con la búsqueda.
+                                </div>
+                              )}
+                            </div>
+                          </FloatingMatchcodePortal>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                          Proyecto SAP / Título Requerimiento
+                        </label>
+                        <input
+                          type="text"
+                          value={newSolpedProjectTitle}
+                          onChange={(e) => setNewSolpedProjectTitle(e.target.value)}
+                          placeholder="Ej. Consultoría y Servicios Especializados SAP"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                          Elemento PEP (Imputación 'P') *
+                        </label>
+                        <input
+                          type="text"
+                          value={newSolpedPep}
+                          onChange={(e) => setNewSolpedPep(e.target.value)}
+                          placeholder="PEP-SAP-2026-001.1"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-blue-700 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                          Centro de Coste (CeCo)
+                        </label>
+                        <input
+                          type="text"
+                          value={newSolpedCeco}
+                          onChange={(e) => setNewSolpedCeco(e.target.value)}
+                          placeholder="CC-10100"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
 
-                {/* Tarjeta de Datos de Cabecera (Header Data) */}
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="w-4 h-4 text-blue-700" />
-                      <span className="font-bold text-slate-800 text-xs">Datos de Cabecera (Header Data)</span>
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-mono">Imputación PEP 'P' • Categoría 'D'</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-[10px] font-bold text-slate-600">
-                          Proveedor / Subcontratista *
-                        </label>
-                        <select
-                          className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 max-w-[140px] truncate cursor-pointer"
-                          value=""
-                          onChange={e => {
-                            const val = e.target.value;
-                            if (!val) return;
-                            const storedSupps = getStoredSuppliers();
-                            const found = storedSupps.find(s => s.id === val);
-                            if (found) {
-                              if (found.isBlocked) {
-                                alert(`Atención SAP XK05: El proveedor "${found.legalName}" se encuentra BLOQUEADO en el Maestro de Proveedores por el motivo:\n\n"${found.blockingReason || 'Bloqueo administrativo'}"\n\nNo se recomienda cursar SOLPEDs ni pedidos a proveedores bloqueados.`);
-                              }
-                              setNewSolpedSupplier(found.legalName);
-                              setNewSolpedSupplierTaxId(found.taxId);
-                              if (found.billingCurrency) {
-                                setNewSolpedCurrency(found.billingCurrency);
-                              }
-                            }
-                            e.target.value = '';
-                          }}
-                        >
-                          <option value="">▼ Desde Maestro...</option>
-                          {getStoredSuppliers().map(s => (
-                            <option key={s.id} value={s.id}>
-                              {s.isBlocked ? '⛔ [BLOQUEADO] ' : ''}{s.legalName} ({s.taxId}) - {s.billingCurrency}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <input
-                        type="text"
-                        value={newSolpedSupplier}
-                        onChange={(e) => setNewSolpedSupplier(e.target.value)}
-                        placeholder="Ej. Partner Subcontratista SAP"
-                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                        RUT / Tax ID Proveedor
-                      </label>
-                      <input
-                        type="text"
-                        value={newSolpedSupplierTaxId}
-                        onChange={(e) => setNewSolpedSupplierTaxId(e.target.value)}
-                        placeholder="Ej. 76.543.210-K"
-                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                        Cotización Comercial Asociada
-                      </label>
-                      {quotations && quotations.length > 0 ? (
-                        <select
-                          value={newSolpedQuotationId}
-                          onChange={(e) => handleSelectQuotationForSolped(e.target.value)}
-                          className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                        >
-                          <option value="">-- Sin cotización vinculada --</option>
-                          {quotations.map(q => (
-                            <option key={q.id} value={q.id}>
-                              {q.quotationCode || q.id} - {q.clientCompanyName}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          type="text"
-                          value={newSolpedQuotationCode}
-                          onChange={(e) => setNewSolpedQuotationCode(e.target.value)}
-                          placeholder="COT-SAP-2026-001"
-                          className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                        />
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                        Moneda de la SOLPED
-                      </label>
-                      <select
-                        value={newSolpedCurrency}
-                        onChange={(e) => {
-                          const curr = e.target.value as SupportedCurrency;
-                          setNewSolpedCurrency(curr);
-                          const symbol = curr === 'UF' ? 'UF' : '$';
-                          setNewSolpedPositions(prev => prev.map(p => ({
-                            ...p,
-                            currency: curr,
-                            currencySymbol: symbol
-                          })));
-                        }}
-                        className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                      >
-                        <option value="UF">UF (Unidad de Fomento)</option>
-                        <option value="CLP">CLP (Peso Chileno)</option>
-                        <option value="USD">USD (Dólar Estadounidense)</option>
-                        <option value="EUR">EUR (Euro)</option>
-                        <option value="MXN">MXN (Peso Mexicano)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                        Cliente / Razón Social Mandante
-                      </label>
-                      <input
-                        type="text"
-                        value={newSolpedClientName}
-                        onChange={(e) => setNewSolpedClientName(e.target.value)}
-                        placeholder="Ej. Inversiones Twin Ducks Capital"
-                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                        Proyecto SAP / Título Requerimiento
-                      </label>
-                      <input
-                        type="text"
-                        value={newSolpedProjectTitle}
-                        onChange={(e) => setNewSolpedProjectTitle(e.target.value)}
-                        placeholder="Ej. Consultoría y Servicios Especializados SAP"
-                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                        Elemento PEP (Imputación 'P') *
-                      </label>
-                      <input
-                        type="text"
-                        value={newSolpedPep}
-                        onChange={(e) => setNewSolpedPep(e.target.value)}
-                        placeholder="PEP-SAP-2026-001.1"
-                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-blue-700 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                        Centro de Coste (CeCo)
-                      </label>
-                      <input
-                        type="text"
-                        value={newSolpedCeco}
-                        onChange={(e) => setNewSolpedCeco(e.target.value)}
-                        placeholder="CC-10100"
-                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                      />
-                    </div>
-                  </div>
+            {/* Visor ALV de Posiciones de Servicio de la SOLPED (ME51N) - Ocupa todo el espacio vertical */}
+            <div className="flex-1 min-h-[320px] flex flex-col bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
+              <div className="shrink-0 bg-slate-100/90 px-3 py-2 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <TableIcon className="w-4 h-4 text-blue-700" />
+                  <span className="font-bold text-slate-800 text-xs">
+                    Visor ALV de Posiciones (ME51N - Tipo 'D' Servicios)
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                    {newSolpedPositions.length} {newSolpedPositions.length === 1 ? 'pos.' : 'pos.'}
+                  </span>
+                  <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-slate-200 text-slate-700">
+                    Formato ALV
+                  </span>
                 </div>
 
-                {/* Listado ALV de Posiciones de Servicio de la SOLPED */}
-                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs space-y-0">
-                  <div className="bg-slate-100/90 px-3.5 py-2.5 border-b border-slate-200 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <TableIcon className="w-4 h-4 text-blue-700" />
-                      <span className="font-bold text-slate-800 text-xs">
-                        Posiciones de Servicio de la SOLPED (Tipo 'D' - Servicios)
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                        {newSolpedPositions.length} {newSolpedPositions.length === 1 ? 'posición' : 'posiciones'}
-                      </span>
-                    </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Atajos Rápidos para Agregar Especialidades */}
+                  <div className="hidden sm:flex items-center gap-1 text-[10px] text-slate-500 font-medium">
+                    <span className="text-[10px] text-slate-400">Rápido:</span>
                     <button
                       type="button"
-                      onClick={handleAddNewSolpedPosition}
-                      className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                      onClick={() => handleAddPresetPosition('abaper')}
+                      className="px-1.5 py-0.5 rounded bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition-colors cursor-pointer text-[10px]"
+                      title="Agregar posición Consultor ABAP"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>+ Agregar Posición</span>
+                      + ABAP
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPresetPosition('fico')}
+                      className="px-1.5 py-0.5 rounded bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition-colors cursor-pointer text-[10px]"
+                      title="Agregar posición Consultor FICO"
+                    >
+                      + FICO
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPresetPosition('mm')}
+                      className="px-1.5 py-0.5 rounded bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition-colors cursor-pointer text-[10px]"
+                      title="Agregar posición Consultor MM"
+                    >
+                      + MM
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPresetPosition('btp')}
+                      className="px-1.5 py-0.5 rounded bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition-colors cursor-pointer text-[10px]"
+                      title="Agregar posición Consultor SAP BTP"
+                    >
+                      + BTP
                     </button>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead className="bg-slate-50 text-slate-700 border-b border-slate-200 font-semibold text-[11px]">
-                        <tr>
-                          <th className="p-2.5 text-center w-12">Pos.</th>
-                          <th className="p-2.5 min-w-[200px]">Rol / Perfil de Servicio</th>
-                          <th className="p-2.5 min-w-[130px]">Seniority</th>
-                          <th className="p-2.5 text-right w-24">Horas</th>
-                          <th className="p-2.5 text-right w-28">Tarifa / Hr</th>
-                          <th className="p-2.5 text-right min-w-[120px]">Subtotal</th>
-                          <th className="p-2.5 text-center w-12">Acción</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {newSolpedPositions.map((pos, idx) => {
-                          const posNum = String((idx + 1) * 10).padStart(5, '0');
-                          const subtotal = (Number(pos.hours) || 0) * (Number(pos.hourlyRate) || 0);
+                  <button
+                    type="button"
+                    onClick={handleAddNewSolpedPosition}
+                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Agregar Posición</span>
+                  </button>
+                </div>
+              </div>
 
-                          return (
-                            <tr key={idx} className="hover:bg-blue-50/40 transition-colors">
-                              <td className="p-2.5 text-center font-mono font-bold text-slate-500">
-                                {posNum}
-                              </td>
-                              <td className="p-2.5">
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-1.5">
+              {/* Contenedor desplazable de la grilla ALV */}
+              <div className="flex-1 min-h-0 overflow-auto relative pb-28">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="sticky top-0 z-20 bg-slate-100 text-slate-700 border-b border-slate-300 font-bold text-[11px] shadow-2xs">
+                    <tr>
+                      <th className="p-1.5 text-center w-12 text-slate-600">Pos.</th>
+                      <th className="p-1.5 w-36 min-w-[130px] text-slate-700">Imputación PEP</th>
+                      <th className="p-1.5 min-w-[220px] text-slate-700">Rol / Perfil de Servicio (Tipo 'D')</th>
+                      <th className="p-1.5 w-28 min-w-[110px] text-slate-700">Seniority</th>
+                      <th className="p-1.5 text-right w-24 text-slate-700">Horas</th>
+                      <th className="p-1.5 text-right w-28 text-slate-700">Tarifa / Hr</th>
+                      <th className="p-1.5 text-right w-32 min-w-[110px] text-slate-700">Importe Neto</th>
+                      <th className="p-1.5 text-center w-14 text-slate-600">Acc.</th>
+                    </tr>
+                  </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {newSolpedPositions.map((pos, idx) => {
+                            const posNum = String((idx + 1) * 10).padStart(5, '0');
+                            const subtotal = (Number(pos.hours) || 0) * (Number(pos.hourlyRate) || 0);
+
+                            return (
+                              <tr key={idx} className="hover:bg-blue-50/40 transition-colors">
+                                <td className="p-1.5 text-center font-mono font-bold text-slate-500 text-xs">
+                                  {posNum}
+                                </td>
+                                <td className="p-1.5 font-mono">
+                                  <input
+                                    type="text"
+                                    value={pos.pepElement || `${newSolpedPep || 'PEP-SAP'}.${idx + 1}`}
+                                    onChange={(e) => handleUpdateSolpedPosition(idx, 'pepElement', e.target.value)}
+                                    placeholder="PEP-SAP-001.1"
+                                    className="w-full bg-white border border-slate-200 hover:border-slate-300 focus:border-blue-500 rounded px-1.5 py-1 text-[11px] font-mono font-bold text-blue-700 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
+                                    title="Elemento PEP para imputación SAP"
+                                  />
+                                </td>
+                                <td className="p-1.5">
+                                  <div className="space-y-0.5">
+                                    <div className="relative">
+                                      <input
+                                        type="text"
+                                        value={pos.roleTitle}
+                                        onChange={(e) => handleUpdateSolpedPosition(idx, 'roleTitle', e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'F4') {
+                                            e.preventDefault();
+                                            const nextIdx = openPositionMatchcodeIdx === idx ? null : idx;
+                                            setOpenPositionMatchcodeIdx(nextIdx);
+                                            setPositionAnchorEl(nextIdx !== null ? (e.currentTarget.parentElement || e.currentTarget) : null);
+                                            setPositionMatchcodeFilter('');
+                                          }
+                                        }}
+                                        placeholder="Ej. Consultor ABAP / Funcional"
+                                        className="w-full bg-white border border-slate-200 hover:border-slate-300 focus:border-blue-500 rounded pl-2 pr-11 py-1 text-xs font-medium text-slate-800 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          const nextIdx = openPositionMatchcodeIdx === idx ? null : idx;
+                                          setOpenPositionMatchcodeIdx(nextIdx);
+                                          setPositionAnchorEl(nextIdx !== null ? (e.currentTarget.parentElement || e.currentTarget) : null);
+                                          setPositionMatchcodeFilter('');
+                                        }}
+                                        className={`absolute right-1 top-1/2 -translate-y-1/2 h-5 px-1 flex items-center gap-0.5 rounded text-xs transition-colors cursor-pointer ${
+                                          openPositionMatchcodeIdx === idx 
+                                            ? 'bg-blue-600 text-white shadow-2xs' 
+                                            : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'
+                                        }`}
+                                        title="Ayuda para búsqueda F4 (Matchcode Especialidades y Módulos SAP)"
+                                      >
+                                        <Search className="w-3 h-3" />
+                                        <span className="text-[8px] font-mono font-bold tracking-tighter opacity-80">F4</span>
+                                      </button>
+
+                                      {/* Popover Matchcode Especialidades / Módulos SAP (F4) */}
+                                      <FloatingMatchcodePortal
+                                        isOpen={openPositionMatchcodeIdx === idx}
+                                        onClose={() => {
+                                          setOpenPositionMatchcodeIdx(null);
+                                          setPositionAnchorEl(null);
+                                        }}
+                                        anchorEl={positionAnchorEl}
+                                        width={420}
+                                      >
+                                        <div className="bg-slate-900 text-white px-3 py-2 flex items-center justify-between">
+                                          <div className="flex items-center gap-1.5">
+                                            <Search className="w-3.5 h-3.5 text-blue-400" />
+                                            <span className="font-bold text-xs">Ayuda para Búsqueda (F4)</span>
+                                          </div>
+                                          <span className="text-[10px] text-slate-400 font-mono">
+                                            Módulos & Especialidades ({companyCatalogModules.length})
+                                          </span>
+                                        </div>
+                                        <div className="p-2 border-b border-slate-200 bg-slate-50">
+                                          <input
+                                            type="text"
+                                            value={positionMatchcodeFilter}
+                                            onChange={(e) => setPositionMatchcodeFilter(e.target.value)}
+                                            placeholder="Filtrar por especialidad, módulo o código..."
+                                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                                            autoFocus
+                                            onKeyDown={(e) => {
+                                              if (e.key === 'Escape') {
+                                                setOpenPositionMatchcodeIdx(null);
+                                                setPositionAnchorEl(null);
+                                              }
+                                            }}
+                                          />
+                                        </div>
+                                        <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                                          {companyCatalogModules
+                                            .filter(mod => {
+                                              if (!positionMatchcodeFilter.trim()) return true;
+                                              const q = positionMatchcodeFilter.toLowerCase();
+                                              return mod.name.toLowerCase().includes(q) ||
+                                                     mod.code.toLowerCase().includes(q) ||
+                                                     (mod.category && mod.category.toLowerCase().includes(q));
+                                            })
+                                            .map(mod => {
+                                              const rate = getModuleBenchmarkRate(mod, pos.seniority || 'Senior', newSolpedCurrency);
+                                              return (
+                                                <div
+                                                  key={mod.id || mod.code}
+                                                  onClick={() => {
+                                                    handleSelectProfileForPosition(idx, `mod:${mod.code}`);
+                                                    setOpenPositionMatchcodeIdx(null);
+                                                    setPositionAnchorEl(null);
+                                                    setPositionMatchcodeFilter('');
+                                                  }}
+                                                  className="px-3 py-2 text-xs hover:bg-blue-50 cursor-pointer transition-colors flex items-center justify-between gap-2"
+                                                >
+                                                  <div className="min-w-0 flex-1">
+                                                    <div className="font-semibold text-slate-800 truncate">
+                                                      {mod.name}
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-500 font-mono">
+                                                      Código: {mod.code} {mod.category ? `• ${mod.category}` : ''}
+                                                    </div>
+                                                  </div>
+                                                  {rate > 0 && (
+                                                    <span className="shrink-0 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                                                      {rate} {newSolpedCurrency}/h
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              );
+                                            })}
+                                          {companyCatalogModules.filter(mod => {
+                                            if (!positionMatchcodeFilter.trim()) return true;
+                                            const q = positionMatchcodeFilter.toLowerCase();
+                                            return mod.name.toLowerCase().includes(q) ||
+                                                   mod.code.toLowerCase().includes(q) ||
+                                                   (mod.category && mod.category.toLowerCase().includes(q));
+                                          }).length === 0 && (
+                                            <div className="p-4 text-center text-xs text-slate-400">
+                                              No se encontraron módulos o especialidades que coincidan con la búsqueda.
+                                            </div>
+                                          )}
+                                        </div>
+                                      </FloatingMatchcodePortal>
+                                    </div>
+                                    {pos.professionalName && (
+                                      <div className="inline-flex items-center gap-1 text-[10px] font-medium text-blue-700 bg-blue-50 px-1 py-0.2 rounded border border-blue-200 truncate max-w-full">
+                                        <UserCheck className="w-2.5 h-2.5 text-blue-600 shrink-0" />
+                                        <span className="truncate">{pos.professionalName}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="p-1.5">
+                                  <select
+                                    value={pos.seniority}
+                                    onChange={(e) => handleUpdateSolpedPosition(idx, 'seniority', e.target.value as SeniorityLevel)}
+                                    className="w-full bg-white border border-slate-200 hover:border-slate-300 rounded px-1.5 py-1 text-xs text-slate-800 focus:ring-1 focus:ring-blue-500"
+                                  >
+                                    <option value="Junior">Junior</option>
+                                    <option value="Semi-Senior">Semi-Senior</option>
+                                    <option value="Senior">Senior</option>
+                                    <option value="Lead / Arquitecto">Lead / Arq.</option>
+                                  </select>
+                                </td>
+                                <td className="p-1.5 text-right">
+                                  <div className="flex items-center justify-end gap-1">
                                     <input
-                                      type="text"
-                                      value={pos.roleTitle}
-                                      onChange={(e) => handleUpdateSolpedPosition(idx, 'roleTitle', e.target.value)}
-                                      placeholder="Nombre o Perfil de Servicio"
-                                      className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-xs font-medium text-slate-800 focus:ring-1 focus:ring-blue-500"
+                                      type="number"
+                                      min="1"
+                                      step="1"
+                                      value={pos.hours || ''}
+                                      onChange={(e) => handleUpdateSolpedPosition(idx, 'hours', Number(e.target.value))}
+                                      className="w-16 bg-white border border-slate-200 hover:border-slate-300 rounded px-1.5 py-1 text-xs text-right font-bold text-slate-800 focus:ring-1 focus:ring-blue-500"
                                     />
-                                    <select
-                                      onChange={(e) => handleSelectPresetForPosition(idx, e.target.value)}
-                                      defaultValue=""
-                                      className="bg-slate-50 border border-slate-300 rounded px-1.5 py-1 text-[11px] text-slate-600 focus:outline-hidden"
-                                      title="Seleccionar preset SAP"
+                                    <span className="text-[10px] text-slate-400 font-mono">HUR</span>
+                                  </div>
+                                </td>
+                                <td className="p-1.5 text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <span className="text-[10px] text-slate-400 font-mono">{newSolpedCurrency}</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.1"
+                                      value={pos.hourlyRate || ''}
+                                      onChange={(e) => handleUpdateSolpedPosition(idx, 'hourlyRate', Number(e.target.value))}
+                                      className="w-20 bg-white border border-slate-200 hover:border-slate-300 rounded px-1.5 py-1 text-xs text-right font-mono font-bold text-slate-800 focus:ring-1 focus:ring-blue-500"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="p-1.5 text-right font-mono font-bold text-blue-900 text-xs">
+                                  {formatCurrency(subtotal, newSolpedCurrency, newSolpedCurrency === 'UF' ? 'UF' : '$')}
+                                </td>
+                                <td className="p-1.5 text-center">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDuplicateSolpedPosition(idx)}
+                                      className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                      title="Duplicar posición"
                                     >
-                                      <option value="" disabled>Presets SAP...</option>
-                                      {SAP_SPECIALTY_PRESETS.map(preset => (
-                                        <option key={preset.id} value={preset.id}>
-                                          {preset.label} ({preset.category})
-                                        </option>
-                                      ))}
-                                    </select>
+                                      <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveSolpedPosition(idx)}
+                                      disabled={newSolpedPositions.length <= 1}
+                                      className={`p-1 rounded transition-colors cursor-pointer ${
+                                        newSolpedPositions.length <= 1
+                                          ? 'text-slate-200 cursor-not-allowed'
+                                          : 'text-rose-500 hover:text-rose-700 hover:bg-rose-50'
+                                      }`}
+                                      title="Eliminar posición"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
                                   </div>
-                                  <div className="text-[10px] text-slate-400 font-mono">
-                                    Imputación PEP: {pos.pepElement || `${newSolpedPep || 'PEP-SAP'}.${idx + 1}`}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="p-2.5">
-                                <select
-                                  value={pos.seniority}
-                                  onChange={(e) => handleUpdateSolpedPosition(idx, 'seniority', e.target.value as SeniorityLevel)}
-                                  className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-800 focus:ring-1 focus:ring-blue-500"
-                                >
-                                  <option value="Junior">Junior</option>
-                                  <option value="Semi-Senior">Semi-Senior</option>
-                                  <option value="Senior">Senior</option>
-                                  <option value="Lead / Arquitecto">Lead / Arquitecto</option>
-                                </select>
-                              </td>
-                              <td className="p-2.5 text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    step="1"
-                                    value={pos.hours || ''}
-                                    onChange={(e) => handleUpdateSolpedPosition(idx, 'hours', Number(e.target.value))}
-                                    className="w-16 bg-white border border-slate-300 rounded px-1.5 py-1 text-xs text-right font-bold text-slate-800 focus:ring-1 focus:ring-blue-500"
-                                  />
-                                  <span className="text-[10px] text-slate-400 font-mono">HUR</span>
-                                </div>
-                              </td>
-                              <td className="p-2.5 text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  <span className="text-[10px] text-slate-400 font-mono">{newSolpedCurrency}</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.1"
-                                    value={pos.hourlyRate || ''}
-                                    onChange={(e) => handleUpdateSolpedPosition(idx, 'hourlyRate', Number(e.target.value))}
-                                    className="w-20 bg-white border border-slate-300 rounded px-1.5 py-1 text-xs text-right font-mono font-bold text-slate-800 focus:ring-1 focus:ring-blue-500"
-                                  />
-                                </div>
-                              </td>
-                              <td className="p-2.5 text-right font-mono font-bold text-blue-900">
-                                {formatCurrency(subtotal, newSolpedCurrency, newSolpedCurrency === 'UF' ? 'UF' : '$')}
-                              </td>
-                              <td className="p-2.5 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveSolpedPosition(idx)}
-                                  disabled={newSolpedPositions.length <= 1}
-                                  className={`p-1 rounded transition-colors cursor-pointer ${
-                                    newSolpedPositions.length <= 1
-                                      ? 'text-slate-300 cursor-not-allowed'
-                                      : 'text-rose-500 hover:text-rose-700 hover:bg-rose-50'
-                                  }`}
-                                  title="Eliminar posición"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot className="bg-slate-50 border-t border-slate-200 font-bold text-xs">
-                        <tr>
-                          <td colSpan={3} className="p-2.5 text-right text-slate-700">
-                            Totales Estimados SOLPED (ME51N):
-                          </td>
-                          <td className="p-2.5 text-right font-bold text-slate-900">
-                            {totalHrs} HUR
-                          </td>
-                          <td className="p-2.5"></td>
-                          <td className="p-2.5 text-right font-mono text-sm text-blue-700 font-black">
-                            {formatCurrency(totalAmt, newSolpedCurrency, newSolpedCurrency === 'UF' ? 'UF' : '$')}
-                          </td>
-                          <td></td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Barra de Totales ALV Fija al Pie de la Grilla (Summenzeile SAP ME51N) */}
+                    <div className="shrink-0 bg-slate-100/95 border-t border-slate-300 px-3.5 py-2 flex items-center justify-between font-mono font-bold text-xs">
+                      <span className="text-slate-700 text-[11px]">
+                        ∑ Totales ALV (ME51N) • {newSolpedPositions.length} {newSolpedPositions.length === 1 ? 'posición' : 'posiciones'}:
+                      </span>
+                      <div className="flex items-center gap-4">
+                        <span className="text-slate-800 font-bold text-[11px]">
+                          {totalHrs} HUR
+                        </span>
+                        <span className="text-blue-700 font-black text-xs sm:text-sm">
+                          {formatCurrency(totalAmt, newSolpedCurrency, newSolpedCurrency === 'UF' ? 'UF' : '$')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Área de Observaciones pegada a la parte inferior de la pantalla */}
+                  <div className="shrink-0 bg-white border border-slate-200 rounded-xl p-2.5 shadow-2xs">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] font-bold text-slate-700 flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-blue-700" />
+                        Observaciones y Especificaciones Técnicas del Servicio (ME51N)
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
+                        Texto de cabecera / alcance técnico del requerimiento
+                      </span>
+                    </div>
+                    <textarea
+                      rows={2}
+                      value={newSolpedNotes}
+                      onChange={(e) => setNewSolpedNotes(e.target.value)}
+                      placeholder="Indique detalles adicionales sobre el requerimiento de consultoría, condiciones de entrega o alcances técnicos..."
+                      className="w-full bg-slate-50/60 hover:bg-white focus:bg-white border border-slate-200 focus:border-blue-500 rounded-lg p-2 text-xs text-slate-800 focus:ring-1 focus:ring-blue-500 focus:outline-hidden transition-colors resize-none"
+                    />
                   </div>
                 </div>
 
-                {/* Observaciones y Notas */}
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                    Observaciones y Especificaciones Técnicas del Servicio (ME51N)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={newSolpedNotes}
-                    onChange={(e) => setNewSolpedNotes(e.target.value)}
-                    placeholder="Indique detalles adicionales sobre el requerimiento de consultoría, condiciones de entrega o alcances técnicos..."
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                  />
+                {/* Right Side Inspector & Validation Panel (~28% Width) */}
+                <div className="w-full lg:w-[320px] xl:w-[360px] shrink-0 border-t lg:border-t-0 lg:border-l border-slate-200 bg-slate-50/80 p-4 space-y-4 overflow-y-auto text-xs">
+                  {/* Resumen Financiero y Contable */}
+                  <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-2xs space-y-2.5">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                        <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                        Resumen Financiero
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                        {newSolpedCurrency}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 font-mono text-xs">
+                      <div className="flex justify-between text-slate-600">
+                        <span>Horas Totales:</span>
+                        <span className="font-bold text-slate-900">{totalHrs} HUR</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600">
+                        <span>Subtotal Neto:</span>
+                        <span className="font-bold text-slate-900">
+                          {formatCurrency(totalAmt, newSolpedCurrency, newSolpedCurrency === 'UF' ? 'UF' : '$')}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-slate-500 text-[11px]">
+                        <span>IVA Estimado (19%):</span>
+                        <span>
+                          {formatCurrency(totalAmt * 0.19, newSolpedCurrency, newSolpedCurrency === 'UF' ? 'UF' : '$')}
+                        </span>
+                      </div>
+                      <div className="border-t border-slate-200 pt-2 flex justify-between items-baseline text-sm font-bold text-blue-900">
+                        <span>Total Bruto Est.:</span>
+                        <span className="text-base text-blue-700">
+                          {formatCurrency(totalAmt * 1.19, newSolpedCurrency, newSolpedCurrency === 'UF' ? 'UF' : '$')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Ficha del Proveedor & Validación de Maestro */}
+                  <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-2xs space-y-2.5">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-blue-700" />
+                        Ficha Proveedor (Acreedor)
+                      </span>
+                      {matchedSupplier ? (
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                          En Maestro
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                          No Homologado
+                        </span>
+                      )}
+                    </div>
+
+                    {matchedSupplier ? (
+                      <div className="space-y-2 text-[11px]">
+                        <div>
+                          <span className="font-bold text-slate-800 block text-xs">{matchedSupplier.legalName}</span>
+                          <span className="text-slate-500 font-mono">RUT: {matchedSupplier.taxId} • {matchedSupplier.vendorCode || 'LIFNR'}</span>
+                        </div>
+
+                        {matchedSupplier.isBlocked && (
+                          <div className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[10px] space-y-0.5">
+                            <div className="flex items-center gap-1 font-bold text-rose-900">
+                              <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+                              <span>BLOQUEADO EN SAP XK05</span>
+                            </div>
+                            <p className="line-clamp-2">{matchedSupplier.blockingReason || 'Bloqueo administrativo activo'}</p>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                          <div>
+                            <span className="text-slate-400 block">Moneda Habitual:</span>
+                            <span className="font-bold text-slate-800">{matchedSupplier.billingCurrency}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block">Condición Pago:</span>
+                            <span className="font-medium text-slate-800 truncate block" title={matchedSupplier.paymentTerms}>
+                              {matchedSupplier.paymentTerms || '30 días'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Botón para Importar Especialistas del Maestro */}
+                        {matchedSupplier.specialistRates && matchedSupplier.specialistRates.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleImportSupplierSpecialists(matchedSupplier.id)}
+                            className="w-full py-1.5 px-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Importar {matchedSupplier.specialistRates.length} Especialistas del Proveedor</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-slate-500 space-y-1.5">
+                        <p>
+                          El proveedor ingresado <strong>"{newSolpedSupplier || 'Sin nombre'}"</strong> no está vinculado al Maestro de Proveedores.
+                        </p>
+                        <p className="text-[10px] text-blue-600 font-medium">
+                          Puede registrarlo o vincularlo desde el selector "Desde Maestro..." en los datos de cabecera.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Auditoría de Imputación SAP */}
+                  <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-2xs space-y-2">
+                    <span className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                      <Layers className="w-3.5 h-3.5 text-indigo-700" />
+                      Auditoría de Imputación SAP
+                    </span>
+
+                    <div className="space-y-1.5 text-[11px]">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Elemento PEP ('P'):</span>
+                        <span className="font-mono font-bold text-blue-700">{newSolpedPep || 'No asignado'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Centro Coste CeCo:</span>
+                        <span className="font-mono text-slate-800">{newSolpedCeco || 'CC-10100'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Tipo Documento:</span>
+                        <span className="font-mono font-medium text-slate-800">{newSolpedDocType} (Estándar)</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Tipo Posición:</span>
+                        <span className="font-mono font-medium text-slate-800">D (Servicios)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Flujo de Aprobación ME54N */}
+                  <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200/80 text-[11px] space-y-1.5 text-blue-900">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Ciclo de Aprobación de Compras</span>
+                    </div>
+                    <p className="text-[10px] text-blue-700 leading-relaxed">
+                      1. <strong>ME51N</strong>: Creación SOLPED (Paso Actual)<br />
+                      2. <strong>ME54N</strong>: Liberación por Jefatura / Control Presupuestario<br />
+                      3. <strong>ME21N</strong>: Generación de Pedido de Compra (PO)<br />
+                      4. <strong>ML81N</strong>: Aceptación de Servicios (HES)
+                    </p>
+                  </div>
                 </div>
               </div>
 
               {/* Modal Footer */}
-              <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex items-center justify-between shrink-0">
+              <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
                 <div className="text-[11px] text-slate-500">
-                  Al grabar, la SOLPED pasará a estado <strong>'Pendiente de Liberación (ME54N)'</strong>.
+                  Al grabar, la SOLPED pasará a estado <strong>'Pendiente de Liberación (ME54N)'</strong> con {newSolpedPositions.length} posición(es).
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <button
                     type="button"
                     onClick={() => setIsCreatingSolped(false)}
@@ -2570,10 +3597,10 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                   <button
                     type="button"
                     onClick={handleSaveNewSolped}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-md active:scale-98"
+                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-md active:scale-98"
                   >
                     <Check className="w-4 h-4" />
-                    <span>Grabar SOLPED Oficial (ME51N)</span>
+                    <span>Grabar SOLPED Oficial (ME51N) • {formatCurrency(totalAmt, newSolpedCurrency, newSolpedCurrency === 'UF' ? 'UF' : '$')}</span>
                   </button>
                 </div>
               </div>
@@ -3851,73 +4878,142 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                           <label className="font-bold text-slate-700 flex items-center gap-1.5 text-xs">
                             <span>Servicio / Perfil de Consultoría</span>
                           </label>
-                          
-                          {/* Selector de Especialidades y Perfiles de la Empresa (Dinámico) */}
-                          <div className="flex items-center gap-1">
-                            <select
-                              id="select-sap-specialty-me52n"
-                              disabled={isActivePosLocked}
-                              value=""
-                              onChange={e => {
-                                const val = e.target.value;
-                                if (!val) return;
-                                const mod = companyCatalogModules.find(m => m.name === val || m.code === val);
-                                const preset = SAP_SPECIALTY_PRESETS.find(p => p.label === val);
-                                handleSelectSpecialtyForActivePos(
-                                  mod ? mod.name : (preset ? preset.label : val),
-                                  mod ? mod.code : preset?.code,
-                                  mod ? mod.name : preset?.moduleName
-                                );
-                                e.target.value = '';
-                              }}
-                              className="text-[11px] font-bold py-1 px-2.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-300 hover:bg-blue-100 hover:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer transition-all shadow-2xs max-w-[230px] truncate"
-                              title="Selecciona un perfil o especialidad desde el catálogo maestro de la empresa"
-                            >
-                              <option value="">▼ Seleccionar Especialidad / Perfil...</option>
-                              
-                              {/* Agrupación dinámica por categoría de los perfiles de la empresa */}
-                              {Array.from(new Set(companyCatalogModules.map(m => m.category || 'Consultoría'))).map(categoryName => {
-                                const modulesInCategory = companyCatalogModules.filter(m => (m.category || 'Consultoría') === categoryName);
-                                return (
-                                  <optgroup key={categoryName} label={categoryName}>
-                                    {modulesInCategory.map(mod => (
-                                      <option key={mod.code} value={mod.name}>
-                                        {mod.name} ({mod.code})
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                );
-                              })}
-                            </select>
-                          </div>
+                          <span className="text-[10px] text-slate-400 font-mono">Presiona F4 para catálogo</span>
                         </div>
 
-                        {/* Input de texto libre con soporte de autocompletado y limpieza */}
-                        <div className="relative">
+                        {/* Input unificado con Matchcode F4 */}
+                        <div ref={me52nProfileMatchcodeRef} className="relative">
                           <input
                             type="text"
                             required
                             list="sap-specialties-datalist"
-                            placeholder="Ej: Arquitecto AI, ABAPER, Consultor MM o escribe texto libre..."
+                            placeholder="Ej: Arquitecto AI, Consultor MM, Desarrollador ABAP..."
                             disabled={isActivePosLocked}
                             value={activePos.roleTitle || ''}
                             onChange={e => handleUpdateActivePosition('roleTitle', e.target.value)}
-                            className={`w-full px-3 py-2 pr-8 border rounded-xl font-medium focus:outline-none transition-colors ${
+                            onKeyDown={e => {
+                              if (e.key === 'F4' && !isActivePosLocked) {
+                                e.preventDefault();
+                                setShowMe52nProfileMatchcode(prev => !prev);
+                                setMe52nProfileMatchcodeFilter('');
+                              }
+                            }}
+                            className={`w-full px-3 py-2 pr-16 border rounded-xl font-medium focus:outline-none transition-colors ${
                               isActivePosLocked 
                                 ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed' 
-                                : 'bg-white text-slate-800 border-slate-300 focus:ring-1 focus:ring-blue-500'
+                                : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-blue-500'
                             }`}
                           />
-                          {activePos.roleTitle && !isActivePosLocked && (
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateActivePosition('roleTitle', '')}
-                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-100 cursor-pointer"
-                              title="Limpiar campo para escribir texto libre"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                          {!isActivePosLocked && (
+                            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                              {activePos.roleTitle && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateActivePosition('roleTitle', '')}
+                                  className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 cursor-pointer"
+                                  title="Limpiar campo"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowMe52nProfileMatchcode(prev => !prev);
+                                  setMe52nProfileMatchcodeFilter('');
+                                }}
+                                className={`h-6.5 px-2 flex items-center gap-1 rounded-lg text-xs transition-colors cursor-pointer ${
+                                  showMe52nProfileMatchcode
+                                    ? 'bg-blue-600 text-white shadow-2xs'
+                                    : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'
+                                }`}
+                                title="Ayuda para búsqueda F4 (Matchcode Especialidades SAP)"
+                              >
+                                <Search className="w-3.5 h-3.5" />
+                                <span className="text-[10px] font-mono font-bold tracking-tighter opacity-80">F4</span>
+                              </button>
+                            </div>
                           )}
+
+                          {/* Popover Matchcode F4 para ME52N */}
+                          <FloatingMatchcodePortal
+                            isOpen={showMe52nProfileMatchcode && !isActivePosLocked}
+                            onClose={() => setShowMe52nProfileMatchcode(false)}
+                            anchorRef={me52nProfileMatchcodeRef}
+                            width={440}
+                          >
+                            <div className="bg-slate-900 text-white px-3 py-2 flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <Search className="w-3.5 h-3.5 text-blue-400" />
+                                <span className="font-bold text-xs">Ayuda para Búsqueda (F4)</span>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                Módulos SAP ({companyCatalogModules.length})
+                              </span>
+                            </div>
+                            <div className="p-2 border-b border-slate-200 bg-slate-50">
+                              <input
+                                type="text"
+                                value={me52nProfileMatchcodeFilter}
+                                onChange={(e) => setMe52nProfileMatchcodeFilter(e.target.value)}
+                                placeholder="Filtrar por especialidad, módulo o código..."
+                                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') setShowMe52nProfileMatchcode(false);
+                                }}
+                              />
+                            </div>
+                            <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                              {companyCatalogModules
+                                .filter(mod => {
+                                  if (!me52nProfileMatchcodeFilter.trim()) return true;
+                                  const q = me52nProfileMatchcodeFilter.toLowerCase();
+                                  return mod.name.toLowerCase().includes(q) ||
+                                         mod.code.toLowerCase().includes(q) ||
+                                         (mod.category && mod.category.toLowerCase().includes(q));
+                                })
+                                .map(mod => {
+                                  const rate = getModuleBenchmarkRate(mod, activePos.seniority || 'Senior', activePos.currency || 'UF');
+                                  return (
+                                    <div
+                                      key={mod.id || mod.code}
+                                      onClick={() => {
+                                        handleSelectSpecialtyForActivePos(mod.name, mod.code, mod.name);
+                                        setShowMe52nProfileMatchcode(false);
+                                        setMe52nProfileMatchcodeFilter('');
+                                      }}
+                                      className="px-3 py-2 text-xs hover:bg-blue-50 cursor-pointer transition-colors flex items-center justify-between gap-2"
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <div className="font-semibold text-slate-800 truncate">
+                                          {mod.name}
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 font-mono">
+                                          Código: {mod.code} {mod.category ? `• ${mod.category}` : ''}
+                                        </div>
+                                      </div>
+                                      {rate > 0 && (
+                                        <span className="shrink-0 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                                          {rate} {activePos.currency || 'UF'}/h
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              {companyCatalogModules.filter(mod => {
+                                if (!me52nProfileMatchcodeFilter.trim()) return true;
+                                const q = me52nProfileMatchcodeFilter.toLowerCase();
+                                return mod.name.toLowerCase().includes(q) ||
+                                       mod.code.toLowerCase().includes(q) ||
+                                       (mod.category && mod.category.toLowerCase().includes(q));
+                              }).length === 0 && (
+                                <div className="p-4 text-center text-xs text-slate-400">
+                                  No se encontraron módulos que coincidan.
+                                </div>
+                              )}
+                            </div>
+                          </FloatingMatchcodePortal>
                         </div>
 
                         {/* Datalist dinámico alimentado por el catálogo maestro de la empresa */}

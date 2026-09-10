@@ -380,6 +380,8 @@ export interface ServicePurchaseRequisition {
     releasedAt?: string;
   };
   requisitioner: string;                // e.g. "PMO Lead / Jefe de Proyecto SAP"
+  professionalId?: string;              // ID del profesional del catálogo
+  professionalName?: string;            // Nombre del profesional del catálogo
   createdAt: string;
   convertedPoId?: string;
   convertedPoNumber?: string;
@@ -607,6 +609,16 @@ export interface SupplierBankAccount {
   holderTaxId?: string;
 }
 
+export interface SupplierSpecialistRate {
+  id: string;
+  specialty: string;              // ej. "DEV_ABAP", "SAP_FICO", "SAP_MM"
+  roleTitle?: string;             // ej. "Consultor Senior ABAP", "Arquitecto FICO"
+  seniority?: SeniorityLevel;     // 'Junior' | 'Semi-Senior' | 'Senior' | 'Lead / Arquitecto'
+  hourlyRate: number;             // Tarifa horaria en la moneda del proveedor (ej. 2.20 UF o 75000 CLP)
+  dailyRate?: number;             // Tarifa diaria referencial (8 horas)
+  notes?: string;
+}
+
 export interface SupplierMasterItem {
   id: string;
   vendorCode: string;              // Código SAP Acreedor / Proveedor (ej. "LIFNR-10020" o "PRV-001")
@@ -631,11 +643,12 @@ export interface SupplierMasterItem {
   country: string;                 // País (Chile, México, España, Estados Unidos, Colombia, Argentina, etc.)
   isForeign: boolean;              // true si no es domiciliado en Chile
   
-  // Atributos de Moneda de Cobro & Tarifas
+  // Atributos de Moneda de Cobro & Tarifas por Especialista
   billingCurrency: SupportedCurrency;   // Moneda principal en la que cobra (UF, CLP, USD, EUR, MXN, etc.)
   acceptedCurrencies: SupportedCurrency[]; // Monedas que acepta para órdenes y facturación
-  defaultHourlyRate?: number;           // Tarifa por hora referencial
+  defaultHourlyRate?: number;           // Tarifa por hora referencial (o promedio de especialistas)
   hourlyRateCurrency?: SupportedCurrency;
+  specialistRates?: SupplierSpecialistRate[]; // Tarifas individualizadas por especialista / módulo SAP
   paymentTerms: string;                 // ej. "30 días fecha factura", "Contado contra HES aprobada", "60 días"
   bankAccount?: SupplierBankAccount;
   

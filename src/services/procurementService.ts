@@ -1352,6 +1352,8 @@ export interface CreateSolpedPositionItem {
   currencySymbol?: string;
   pepElement?: string;
   costCenter?: string;
+  professionalId?: string;
+  professionalName?: string;
 }
 
 export interface CreateNewSolpedParams {
@@ -1440,6 +1442,8 @@ export function createNewSolped(params: CreateNewSolpedParams): ServicePurchaseR
       totalAmount,
       status: 'pending_approval',
       requisitioner: reqUser,
+      professionalId: pos.professionalId,
+      professionalName: pos.professionalName,
       createdAt: now,
       notes: params.notes || (params.referenceSolpedNumber ? `Creada con referencia a SOLPED #${params.referenceSolpedNumber} (ME51N)` : undefined)
     };

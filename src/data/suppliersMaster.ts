@@ -26,6 +26,12 @@ export const INITIAL_SUPPLIERS_MASTER: SupplierMasterItem[] = [
     acceptedCurrencies: ['UF', 'CLP', 'USD'],
     defaultHourlyRate: 2.10,
     hourlyRateCurrency: 'UF',
+    specialistRates: [
+      { id: 'spec-1', specialty: 'DEV_ABAP', roleTitle: 'Consultor Senior ABAP / RICEFW', seniority: 'Senior', hourlyRate: 2.05, dailyRate: 16.4 },
+      { id: 'spec-2', specialty: 'SAP_MM', roleTitle: 'Consultor Gestión de Materiales MM', seniority: 'Senior', hourlyRate: 2.10, dailyRate: 16.8 },
+      { id: 'spec-3', specialty: 'SAP_HCM', roleTitle: 'Consultor Nómina & Payroll Chile', seniority: 'Senior', hourlyRate: 2.15, dailyRate: 17.2 },
+      { id: 'spec-4', specialty: 'SAP S/4HANA Migration', roleTitle: 'Arquitecto Líder Migración S/4HANA', seniority: 'Lead / Arquitecto', hourlyRate: 2.45, dailyRate: 19.6 }
+    ],
     paymentTerms: '30 días fecha factura',
     bankAccount: {
       bankName: 'Banco de Chile',
@@ -34,7 +40,7 @@ export const INITIAL_SUPPLIERS_MASTER: SupplierMasterItem[] = [
       holderName: 'Andes Tech Solutions SpA',
       holderTaxId: '76.842.190-4'
     },
-    specialties: ['SAP HCM', 'SAP MM', 'SAP S/4HANA', 'DEV_ABAP'],
+    specialties: ['SAP_HCM', 'SAP_MM', 'SAP S/4HANA Migration', 'DEV_ABAP'],
     seniorityLevels: ['Senior', 'Lead / Arquitecto'],
     website: 'https://andestech.cl',
     contactName: 'Carlos M. Valdivia',
@@ -71,6 +77,13 @@ export const INITIAL_SUPPLIERS_MASTER: SupplierMasterItem[] = [
     acceptedCurrencies: ['CLP', 'UF'],
     defaultHourlyRate: 72000,
     hourlyRateCurrency: 'CLP',
+    specialistRates: [
+      { id: 'spec-ac-1', specialty: 'DEV_ABAP', roleTitle: 'Desarrollador ABAP Semi-Senior', seniority: 'Semi-Senior', hourlyRate: 65000, dailyRate: 520000 },
+      { id: 'spec-ac-2', specialty: 'DEV_ABAP', roleTitle: 'Desarrollador ABAP Senior / OData / RAP', seniority: 'Senior', hourlyRate: 74000, dailyRate: 592000 },
+      { id: 'spec-ac-3', specialty: 'SAP_BASIS', roleTitle: 'Administrador SAP BASIS 24/7', seniority: 'Senior', hourlyRate: 72000, dailyRate: 576000 },
+      { id: 'spec-ac-4', specialty: 'SAP_SECURITY', roleTitle: 'Consultor Seguridad & Roles SAP', seniority: 'Senior', hourlyRate: 70000, dailyRate: 560000 },
+      { id: 'spec-ac-5', specialty: 'SAP BTP', roleTitle: 'Especialista Integración SAP BTP', seniority: 'Senior', hourlyRate: 79000, dailyRate: 632000 }
+    ],
     paymentTerms: '30 días contra HES aprobada',
     bankAccount: {
       bankName: 'Banco Santander Chile',
@@ -116,6 +129,11 @@ export const INITIAL_SUPPLIERS_MASTER: SupplierMasterItem[] = [
     acceptedCurrencies: ['UF', 'CLP'],
     defaultHourlyRate: 2.30,
     hourlyRateCurrency: 'UF',
+    specialistRates: [
+      { id: 'spec-dr-1', specialty: 'SAP_FICO', roleTitle: 'Consultor Senior Finanzas & Costos FICO', seniority: 'Senior', hourlyRate: 2.30, dailyRate: 18.4 },
+      { id: 'spec-dr-2', specialty: 'SAP_HCM', roleTitle: 'Especialista Nómina & Remuneraciones Chile', seniority: 'Senior', hourlyRate: 2.25, dailyRate: 18.0 },
+      { id: 'spec-dr-3', specialty: 'SAP_PMO_LEAD', roleTitle: 'Arquitecto Solución & Líder Técnico SAP', seniority: 'Lead / Arquitecto', hourlyRate: 2.60, dailyRate: 20.8 }
+    ],
     paymentTerms: '15 días fecha boleta de honorarios',
     bankAccount: {
       bankName: 'BCI (Banco de Crédito e Inversiones)',
@@ -160,6 +178,12 @@ export const INITIAL_SUPPLIERS_MASTER: SupplierMasterItem[] = [
     acceptedCurrencies: ['USD', 'UF', 'CLP'],
     defaultHourlyRate: 90,
     hourlyRateCurrency: 'USD',
+    specialistRates: [
+      { id: 'spec-gs-1', specialty: 'SAP_MM', roleTitle: 'Consultor MM Supply Chain Minería', seniority: 'Senior', hourlyRate: 90, dailyRate: 720 },
+      { id: 'spec-gs-2', specialty: 'SAP_LE', roleTitle: 'Especialista Logística de Embarque LE/SD', seniority: 'Senior', hourlyRate: 95, dailyRate: 760 },
+      { id: 'spec-gs-3', specialty: 'SAP_PM', roleTitle: 'Consultor Mantenimiento de Activos PM', seniority: 'Senior', hourlyRate: 88, dailyRate: 704 },
+      { id: 'spec-gs-4', specialty: 'SAP_QM', roleTitle: 'Especialista Calidad y Ensayos QM', seniority: 'Senior', hourlyRate: 85, dailyRate: 680 }
+    ],
     paymentTerms: '30 días fecha factura comercial',
     bankAccount: {
       bankName: 'Banco Scotiabank Chile',
@@ -203,6 +227,11 @@ export const INITIAL_SUPPLIERS_MASTER: SupplierMasterItem[] = [
     acceptedCurrencies: ['EUR', 'USD'],
     defaultHourlyRate: 85,
     hourlyRateCurrency: 'EUR',
+    specialistRates: [
+      { id: 'spec-ib-1', specialty: 'SAP S/4HANA Migration', roleTitle: 'Líder de Migración Financiera S/4HANA', seniority: 'Lead / Arquitecto', hourlyRate: 95, dailyRate: 760 },
+      { id: 'spec-ib-2', specialty: 'SAP BTP', roleTitle: 'Arquitecto Cloud SAP BTP & Kyma', seniority: 'Senior', hourlyRate: 85, dailyRate: 680 },
+      { id: 'spec-ib-3', specialty: 'SAP Analytics Cloud', roleTitle: 'Consultor Senior SAP Analytics Cloud', seniority: 'Senior', hourlyRate: 80, dailyRate: 640 }
+    ],
     paymentTerms: '45 días transferencia internacional Wire SWIFT',
     bankAccount: {
       bankName: 'Banco Santander España',
@@ -212,7 +241,7 @@ export const INITIAL_SUPPLIERS_MASTER: SupplierMasterItem[] = [
       iban: 'ES9100491500051234567890',
       holderName: 'Iberia SAP Consulting Solutions S.L.'
     },
-    specialties: ['SAP S/4HANA Finance', 'SAP BTP', 'SAP Analytics Cloud'],
+    specialties: ['SAP S/4HANA Migration', 'SAP BTP', 'SAP Analytics Cloud'],
     seniorityLevels: ['Senior', 'Lead / Arquitecto'],
     website: 'https://iberiatech.es',
     contactName: 'Javier Domínguez Serrano',
@@ -247,6 +276,11 @@ export const INITIAL_SUPPLIERS_MASTER: SupplierMasterItem[] = [
     acceptedCurrencies: ['USD'],
     defaultHourlyRate: 125,
     hourlyRateCurrency: 'USD',
+    specialistRates: [
+      { id: 'spec-us-1', specialty: 'SAP_BASIS', roleTitle: 'Principal Cloud ERP / Hyperscalers Lead', seniority: 'Lead / Arquitecto', hourlyRate: 140, dailyRate: 1120 },
+      { id: 'spec-us-2', specialty: 'SAP BTP', roleTitle: 'Senior Integration Architect', seniority: 'Senior', hourlyRate: 125, dailyRate: 1000 },
+      { id: 'spec-us-3', specialty: 'SAP_SECURITY', roleTitle: 'Enterprise GRC & Cyber Security SAP', seniority: 'Senior', hourlyRate: 115, dailyRate: 920 }
+    ],
     paymentTerms: '30 días Wire Transfer',
     bankAccount: {
       bankName: 'JPMorgan Chase Bank, N.A.',

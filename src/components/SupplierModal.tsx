@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, 
   Building2, 
@@ -17,14 +17,25 @@ import {
   MapPin,
   Lock,
   Unlock,
-  Sparkles
+  Sparkles,
+  Maximize2,
+  Minimize2,
+  Eye,
+  Check,
+  Plus,
+  Trash2,
+  Users,
+  Award,
+  Calculator,
+  SlidersHorizontal
 } from 'lucide-react';
 import { 
   SupplierMasterItem, 
   SupplierTaxCategory, 
   SupplierDteType, 
   SupportedCurrency,
-  SeniorityLevel 
+  SeniorityLevel,
+  SupplierSpecialistRate 
 } from '../types';
 import { formatRut, validateRut, CHILE_COMUNAS } from '../utils/siiUtils';
 
@@ -80,13 +91,50 @@ const SAP_SPECIALTIES = [
   'SAP Analytics Cloud'
 ];
 
+const SPECIALTY_META: Record<string, { label: string; defaultRole: string; suggestedSeniority: SeniorityLevel }> = {
+  'DEV_ABAP': { label: 'ABAP Development', defaultRole: 'Consultor Senior ABAP / RICEFW', suggestedSeniority: 'Senior' },
+  'SAP_FICO': { label: 'FICO Finanzas & Controlling', defaultRole: 'Consultor Especialista FICO', suggestedSeniority: 'Senior' },
+  'SAP_MM': { label: 'MM Gestión de Materiales', defaultRole: 'Consultor Gestión de Materiales MM', suggestedSeniority: 'Senior' },
+  'SAP_LE': { label: 'LE Logística & SD', defaultRole: 'Consultor Logística y Expedición LE/SD', suggestedSeniority: 'Senior' },
+  'SAP_PM': { label: 'PM Mantenimiento', defaultRole: 'Consultor Mantenimiento de Planta PM', suggestedSeniority: 'Senior' },
+  'SAP_QM': { label: 'QM Gestión de Calidad', defaultRole: 'Consultor Calidad & Ensayos QM', suggestedSeniority: 'Senior' },
+  'SAP_HCM': { label: 'HCM Nómina & Payroll', defaultRole: 'Consultor Nómina & HCM Chile', suggestedSeniority: 'Senior' },
+  'SAP_BASIS': { label: 'BASIS Administración', defaultRole: 'Administrador de Sistemas SAP BASIS', suggestedSeniority: 'Senior' },
+  'SAP_SECURITY': { label: 'Security & GRC Roles', defaultRole: 'Consultor Seguridad & Roles SAP', suggestedSeniority: 'Senior' },
+  'SAP_PMO_LEAD': { label: 'PMO / Lead Arquitecto', defaultRole: 'Líder de Proyecto / Arquitecto SAP', suggestedSeniority: 'Lead / Arquitecto' },
+  'SAP S/4HANA Migration': { label: 'S/4HANA Migración', defaultRole: 'Arquitecto Líder Migración S/4HANA', suggestedSeniority: 'Lead / Arquitecto' },
+  'SAP BTP': { label: 'BTP Cloud Integration', defaultRole: 'Arquitecto Cloud SAP BTP & Kyma', suggestedSeniority: 'Senior' },
+  'SAP Analytics Cloud': { label: 'SAC Analytics Cloud', defaultRole: 'Consultor SAP Analytics Cloud (SAC)', suggestedSeniority: 'Senior' }
+};
+
+const getDefaultRateForCurrency = (currency: SupportedCurrency, seniority: SeniorityLevel = 'Senior'): number => {
+  const multiplier = seniority === 'Lead / Arquitecto' ? 1.18 : seniority === 'Semi-Senior' ? 0.85 : seniority === 'Junior' ? 0.65 : 1.0;
+  switch (currency) {
+    case 'UF':
+      return Number((2.10 * multiplier).toFixed(2));
+    case 'CLP':
+      return Math.round(72000 * multiplier);
+    case 'USD':
+      return Math.round(90 * multiplier);
+    case 'EUR':
+      return Math.round(85 * multiplier);
+    case 'MXN':
+      return Math.round(1500 * multiplier);
+    case 'BRL':
+      return Math.round(450 * multiplier);
+    default:
+      return Math.round(80 * multiplier);
+  }
+};
+
 export const SupplierModal: React.FC<SupplierModalProps> = ({
   isOpen,
   onClose,
   onSave,
   supplierToEdit
 }) => {
-  const [activeTab, setActiveTab] = useState<'sii' | 'currency' | 'services' | 'blocking'>('sii');
+  const [activeTab, setActiveTab] = useState<'sii' | 'currency' | 'contact' | 'blocking'>('sii');
+  const [isMaximized, setIsMaximized] = useState(false);
 
   // Form State
   const [vendorCode, setVendorCode] = useState('');
@@ -108,9 +156,10 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
   const [regionOrState, setRegionOrState] = useState('Región Metropolitana');
   const [isForeign, setIsForeign] = useState(false);
 
-  // Moneda de Cobro & Tarifas
+  // Moneda de Cobro & Tarifas por Especialista
   const [billingCurrency, setBillingCurrency] = useState<SupportedCurrency>('UF');
   const [acceptedCurrencies, setAcceptedCurrencies] = useState<SupportedCurrency[]>(['UF', 'CLP']);
+  const [specialistRates, setSpecialistRates] = useState<SupplierSpecialistRate[]>([]);
   const [defaultHourlyRate, setDefaultHourlyRate] = useState<number | ''>(2.20);
   const [paymentTerms, setPaymentTerms] = useState('30 días fecha factura');
   
@@ -121,7 +170,7 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
   const [swiftCode, setSwiftCode] = useState('');
   const [iban, setIban] = useState('');
   
-  // Capacidades & Contacto
+  // Capacidades & Contacto Comercial
   const [specialties, setSpecialties] = useState<string[]>(['DEV_ABAP', 'SAP_MM']);
   const [seniorityLevels, setSeniorityLevels] = useState<SeniorityLevel[]>(['Senior']);
   const [contactName, setContactName] = useState('');
@@ -167,6 +216,35 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
       setSwiftCode(supplierToEdit.bankAccount?.swiftCode || '');
       setIban(supplierToEdit.bankAccount?.iban || '');
       setSpecialties(supplierToEdit.specialties || []);
+
+      // Cargar o derivar tarifas individuales por especialista
+      const loadedRates: SupplierSpecialistRate[] = (supplierToEdit.specialistRates && supplierToEdit.specialistRates.length > 0)
+        ? supplierToEdit.specialistRates
+        : (supplierToEdit.specialties && supplierToEdit.specialties.length > 0)
+          ? supplierToEdit.specialties.map((spec, idx) => {
+              const meta = SPECIALTY_META[spec];
+              const rate = supplierToEdit.defaultHourlyRate || getDefaultRateForCurrency(supplierToEdit.billingCurrency, 'Senior');
+              return {
+                id: `spec-${idx}-${Date.now()}`,
+                specialty: spec,
+                roleTitle: meta?.defaultRole || `Consultor ${spec.replace('DEV_', '').replace('SAP_', '')}`,
+                seniority: 'Senior' as SeniorityLevel,
+                hourlyRate: Number(rate),
+                dailyRate: Number((rate * 8).toFixed(2))
+              };
+            })
+          : [
+              {
+                id: 'spec-default-1',
+                specialty: 'DEV_ABAP',
+                roleTitle: SPECIALTY_META['DEV_ABAP']?.defaultRole || 'Consultor Senior ABAP',
+                seniority: 'Senior' as SeniorityLevel,
+                hourlyRate: getDefaultRateForCurrency(supplierToEdit.billingCurrency, 'Senior'),
+                dailyRate: getDefaultRateForCurrency(supplierToEdit.billingCurrency, 'Senior') * 8
+              }
+            ];
+      setSpecialistRates(loadedRates);
+
       setSeniorityLevels(supplierToEdit.seniorityLevels || ['Senior']);
       setContactName(supplierToEdit.contactName);
       setContactRole(supplierToEdit.contactRole);
@@ -205,6 +283,28 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
       setSwiftCode('');
       setIban('');
       setSpecialties(['DEV_ABAP', 'SAP_MM']);
+
+      // Especialistas por defecto con tarifas individuales
+      const defaultRates: SupplierSpecialistRate[] = [
+        {
+          id: `spec-init-1`,
+          specialty: 'DEV_ABAP',
+          roleTitle: SPECIALTY_META['DEV_ABAP'].defaultRole,
+          seniority: 'Senior',
+          hourlyRate: getDefaultRateForCurrency('UF', 'Senior'),
+          dailyRate: getDefaultRateForCurrency('UF', 'Senior') * 8
+        },
+        {
+          id: `spec-init-2`,
+          specialty: 'SAP_MM',
+          roleTitle: SPECIALTY_META['SAP_MM'].defaultRole,
+          seniority: 'Senior',
+          hourlyRate: getDefaultRateForCurrency('UF', 'Senior'),
+          dailyRate: getDefaultRateForCurrency('UF', 'Senior') * 8
+        }
+      ];
+      setSpecialistRates(defaultRates);
+
       setSeniorityLevels(['Senior']);
       setContactName('');
       setContactRole('Gerente de Operaciones / Comercial');
@@ -218,6 +318,92 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
     setActiveTab('sii');
     setRutError(null);
   }, [supplierToEdit, isOpen]);
+
+  // Rate metrics calculation
+  const rateMetrics = useMemo(() => {
+    if (specialistRates.length === 0) {
+      return { count: 0, min: 0, max: 0, avg: 0, formattedRange: 'Sin especialistas' };
+    }
+    const rates = specialistRates.map(s => Number(s.hourlyRate) || 0).filter(r => r > 0);
+    if (rates.length === 0) {
+      return { count: specialistRates.length, min: 0, max: 0, avg: 0, formattedRange: '0.00' };
+    }
+    const min = Math.min(...rates);
+    const max = Math.max(...rates);
+    const avg = Number((rates.reduce((a, b) => a + b, 0) / rates.length).toFixed(2));
+    
+    const format = (n: number) => {
+      if (billingCurrency === 'CLP') return `$${n.toLocaleString('es-CL')}`;
+      return `${n.toFixed(2)} ${billingCurrency}`;
+    };
+
+    const formattedRange = min === max ? `${format(min)}/hr` : `${format(min)} – ${format(max)}/hr`;
+    return { count: specialistRates.length, min, max, avg, formattedRange };
+  }, [specialistRates, billingCurrency]);
+
+  // Handler: Add Specialist
+  const handleAddSpecialist = (specKey: string, customTitle?: string) => {
+    const meta = SPECIALTY_META[specKey];
+    const seniority: SeniorityLevel = meta?.suggestedSeniority || 'Senior';
+    const defaultRate = getDefaultRateForCurrency(billingCurrency, seniority);
+    const newRate: SupplierSpecialistRate = {
+      id: `rate-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      specialty: specKey,
+      roleTitle: customTitle || meta?.defaultRole || `Consultor ${specKey.replace('DEV_', '').replace('SAP_', '')}`,
+      seniority,
+      hourlyRate: defaultRate,
+      dailyRate: Number((defaultRate * 8).toFixed(2))
+    };
+    setSpecialistRates(prev => [...prev, newRate]);
+    if (!specialties.includes(specKey)) {
+      setSpecialties(prev => [...prev, specKey]);
+    }
+  };
+
+  // Handler: Update Specialist Rate / Role / Seniority
+  const handleUpdateSpecialistRate = (id: string, field: keyof SupplierSpecialistRate, val: any) => {
+    setSpecialistRates(prev => prev.map(item => {
+      if (item.id === id) {
+        const updated = { ...item, [field]: val };
+        if (field === 'hourlyRate') {
+          const num = val === '' ? 0 : Number(val);
+          updated.hourlyRate = num;
+          updated.dailyRate = Number((num * 8).toFixed(2));
+        }
+        return updated;
+      }
+      return item;
+    }));
+  };
+
+  // Handler: Remove Specialist
+  const handleRemoveSpecialist = (id: string) => {
+    setSpecialistRates(prev => {
+      const next = prev.filter(r => r.id !== id);
+      setSpecialties(Array.from(new Set(next.map(r => r.specialty))));
+      return next;
+    });
+  };
+
+  // Handler: Preload Default Specialists
+  const handlePreloadDefaultSpecialists = () => {
+    const standardModules = ['DEV_ABAP', 'SAP_FICO', 'SAP_MM', 'SAP S/4HANA Migration'];
+    const newRates: SupplierSpecialistRate[] = standardModules.map((mod, idx) => {
+      const meta = SPECIALTY_META[mod];
+      const seniority = meta?.suggestedSeniority || 'Senior';
+      const rate = getDefaultRateForCurrency(billingCurrency, seniority);
+      return {
+        id: `spec-preload-${idx}-${Date.now()}`,
+        specialty: mod,
+        roleTitle: meta?.defaultRole || `Consultor ${mod}`,
+        seniority,
+        hourlyRate: rate,
+        dailyRate: Number((rate * 8).toFixed(2))
+      };
+    });
+    setSpecialistRates(newRates);
+    setSpecialties(standardModules);
+  };
 
   // Handle Chilean RUT formatting & validation
   const handleTaxIdChange = (val: string) => {
@@ -305,6 +491,13 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
       return;
     }
 
+    // Calcular tarifa de referencia promedio a partir de los especialistas (o manual)
+    const effectiveDefaultRate = rateMetrics.avg > 0 
+      ? rateMetrics.avg 
+      : (defaultHourlyRate !== '' ? Number(defaultHourlyRate) : undefined);
+
+    const distinctSpecialties = Array.from(new Set(specialistRates.map(s => s.specialty)));
+
     const item: SupplierMasterItem = {
       id: supplierToEdit ? supplierToEdit.id : `supp-${Date.now()}`,
       vendorCode: vendorCode || `LIFNR-${Math.floor(10000 + Math.random() * 90000)}`,
@@ -326,8 +519,9 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
       isForeign,
       billingCurrency,
       acceptedCurrencies,
-      defaultHourlyRate: defaultHourlyRate !== '' ? Number(defaultHourlyRate) : undefined,
+      defaultHourlyRate: effectiveDefaultRate,
       hourlyRateCurrency: billingCurrency,
+      specialistRates: specialistRates,
       paymentTerms: paymentTerms || '30 días fecha factura',
       bankAccount: bankName.trim() ? {
         bankName: bankName.trim(),
@@ -338,7 +532,7 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
         holderName: legalName.trim(),
         holderTaxId: taxId.trim()
       } : undefined,
-      specialties,
+      specialties: distinctSpecialties.length > 0 ? distinctSpecialties : specialties,
       seniorityLevels,
       website: website.trim() || undefined,
       contactName: contactName.trim() || 'Contacto Comercial',
@@ -362,102 +556,153 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-150 overflow-y-auto">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden my-auto">
+    <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-hidden animate-in fade-in duration-150">
+      <div className={`bg-white rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${
+        isMaximized 
+          ? 'w-[98vw] max-w-[99vw] h-[96vh] max-h-[98vh]' 
+          : 'w-[94vw] max-w-[96vw] h-[92vh] max-h-[94vh]'
+      }`}>
         
         {/* Header */}
-        <div className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="bg-slate-900 text-white px-6 py-3.5 flex items-center justify-between border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-3.5">
             <div className={`p-2.5 rounded-xl ${isBlocked ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-blue-600/20 text-blue-400 border border-blue-500/30'}`}>
               {isBlocked ? <Lock className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                  Transacción SAP XK01 / XK02
+                  Transacción SAP XK01 / XK02 / XK03
                 </span>
-                <span className="text-xs font-mono text-blue-300 font-semibold">
+                <span className="text-xs font-mono text-blue-300 font-bold bg-blue-950/60 px-2 py-0.5 rounded-full border border-blue-800/60">
                   {vendorCode}
                 </span>
+                <span className="text-[10px] font-semibold text-slate-300">
+                  {country === 'Chile' ? '🇨🇱 Chile (SII Módulo 11)' : `🌐 ${country}`}
+                </span>
+                {isBlocked ? (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    ⛔ BLOQUEADO XK05
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    ✓ ACTIVO EN COMPRAS
+                  </span>
+                )}
               </div>
-              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight mt-0.5">
                 {supplierToEdit ? `Modificar Proveedor: ${supplierToEdit.legalName}` : 'Nuevo Proveedor en Maestro SAP MM'}
               </h2>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setIsMaximized(prev => !prev)}
+              title={isMaximized ? "Restaurar tamaño (94%)" : "Maximizar área de trabajo (98%)"}
+              className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              {isMaximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}
-        <div className="bg-slate-50 border-b border-slate-200 px-5 flex gap-2 overflow-x-auto shrink-0">
-          <button
-            type="button"
-            onClick={() => setActiveTab('sii')}
-            className={`py-3 px-3.5 text-xs font-bold border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
-              activeTab === 'sii'
-                ? 'border-blue-600 text-blue-700 bg-white shadow-2xs'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            <span>1. Datos Tributarios & SII Chile</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('currency')}
-            className={`py-3 px-3.5 text-xs font-bold border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
-              activeTab === 'currency'
-                ? 'border-blue-600 text-blue-700 bg-white shadow-2xs'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Coins className="w-4 h-4" />
-            <span>2. Monedas de Cobro & Tarifas</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('services')}
-            className={`py-3 px-3.5 text-xs font-bold border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
-              activeTab === 'services'
-                ? 'border-blue-600 text-blue-700 bg-white shadow-2xs'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>3. Servicios SAP & Contacto</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('blocking')}
-            className={`py-3 px-3.5 text-xs font-bold border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
-              activeTab === 'blocking'
-                ? 'border-rose-600 text-rose-700 bg-white shadow-2xs'
-                : isBlocked 
-                  ? 'border-rose-300 text-rose-600' 
+        <div className="bg-slate-50 border-b border-slate-200 px-6 flex items-center justify-between overflow-x-auto shrink-0 gap-3">
+          <div className="flex items-center gap-1 sm:gap-2 py-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab('sii')}
+              className={`py-2.5 px-3 sm:px-4 text-xs font-bold border-b-2 flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
+                activeTab === 'sii'
+                  ? 'border-blue-600 text-blue-700 bg-white shadow-2xs rounded-t-lg'
                   : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            {isBlocked ? <Lock className="w-4 h-4 text-rose-600" /> : <Unlock className="w-4 h-4 text-slate-500" />}
-            <span>4. Bloqueo de Compras (SAP XK05)</span>
-            {isBlocked && (
-              <span className="bg-rose-100 text-rose-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
-                BLOQUEADO
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              <span>1. Datos Tributarios & SII Chile</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono bg-slate-200/70 text-slate-700">
+                {!isForeign ? (validateRut(taxId) ? '✓' : 'RUT') : 'Tax ID'}
               </span>
-            )}
-          </button>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('currency')}
+              className={`py-2.5 px-3 sm:px-4 text-xs font-bold border-b-2 flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
+                activeTab === 'currency'
+                  ? 'border-blue-600 text-blue-700 bg-white shadow-2xs rounded-t-lg'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Coins className="w-4 h-4" />
+              <span>2. Moneda de Cobro & Tarifas por Especialista</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono bg-emerald-100 text-emerald-800 font-bold">
+                {specialistRates.length} esp. · {billingCurrency}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('contact')}
+              className={`py-2.5 px-3 sm:px-4 text-xs font-bold border-b-2 flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
+                activeTab === 'contact'
+                  ? 'border-blue-600 text-blue-700 bg-white shadow-2xs rounded-t-lg'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <User className="w-4 h-4" />
+              <span>3. Contacto, Condiciones de Pago & Bancos</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono bg-blue-100 text-blue-800 font-bold">
+                {contactName ? contactName.split(' ')[0] : 'KAM'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('blocking')}
+              className={`py-2.5 px-3 sm:px-4 text-xs font-bold border-b-2 flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
+                activeTab === 'blocking'
+                  ? 'border-rose-600 text-rose-700 bg-white shadow-2xs rounded-t-lg'
+                  : isBlocked 
+                    ? 'border-rose-300 text-rose-600' 
+                    : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              {isBlocked ? <Lock className="w-4 h-4 text-rose-600" /> : <Unlock className="w-4 h-4 text-slate-500" />}
+              <span>4. Bloqueo de Compras (SAP XK05)</span>
+              {isBlocked && (
+                <span className="bg-rose-100 text-rose-700 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                  BLOQUEADO
+                </span>
+              )}
+            </button>
+          </div>
+
+          <div className="hidden md:flex items-center gap-2 text-xs text-slate-600 shrink-0">
+            <span className="px-2.5 py-1 rounded-full bg-slate-200/80 font-semibold text-[11px]">
+              {activeTab === 'sii' && 'Paso 1 de 4: Tributario SII'}
+              {activeTab === 'currency' && 'Paso 2 de 4: Especialistas & Tarifas'}
+              {activeTab === 'contact' && 'Paso 3 de 4: Contacto, Pagos & Bancos'}
+              {activeTab === 'blocking' && 'Paso 4 de 4: Bloqueo XK05'}
+            </span>
+          </div>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-5 flex-1">
+        {/* Form Body with 2-Column Responsive Workspace */}
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden min-h-0">
+          <div className="flex-1 overflow-hidden flex flex-col lg:grid lg:grid-cols-12 min-h-0">
+            
+            {/* Left Column: Form Fields */}
+            <div className="lg:col-span-8 xl:col-span-9 p-6 overflow-y-auto space-y-5 h-full">
           {/* TAB 1: DATOS TRIBUTARIOS & SII CHILE */}
           {activeTab === 'sii' && (
             <div className="space-y-4">
@@ -703,138 +948,377 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: MONEDAS DE COBRO & TARIFAS */}
+          {/* TAB 2: MONEDAS DE COBRO & TARIFAS POR ESPECIALISTA */}
           {activeTab === 'currency' && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 flex items-start gap-3 text-xs text-emerald-900">
                 <Coins className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold">Moneda Habitual de Cobro y Facturación</p>
+                  <p className="font-bold">Moneda Habitual y Matriz de Tarifas por Especialista SAP</p>
                   <p className="text-emerald-800 text-[11px] mt-0.5">
-                    Configure la moneda en que el proveedor cotiza y factura. En Chile suele ser <strong>UF</strong>, <strong>Pesos Chilenos (CLP)</strong> o <strong>Dólares (USD)</strong>. En el extranjero cobra en <strong>Dólares (USD)</strong>, <strong>Euros (EUR)</strong> o su moneda local respectiva (MXN, BRL, ARS, etc.).
+                    Configure la moneda de facturación ({billingCurrency}) y defina la tarifa horaria individual para cada especialista y rol SAP. Esto permite cotizaciones exactas según el perfil técnico en lugar de una tarifa plana genérica.
                   </p>
                 </div>
               </div>
 
-              {/* Moneda Principal de Cobro */}
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                  Moneda Principal en la que Cobra el Proveedor *
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                  {CURRENCY_OPTIONS.map(c => {
-                    const isSelected = billingCurrency === c.code;
-                    return (
-                      <button
-                        type="button"
-                        key={c.code}
-                        onClick={() => {
-                          setBillingCurrency(c.code);
-                          if (!acceptedCurrencies.includes(c.code)) {
-                            setAcceptedCurrencies(prev => [...prev, c.code]);
-                          }
-                        }}
-                        className={`p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
-                          isSelected 
-                            ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-500/20 text-blue-900 font-bold shadow-xs' 
-                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
-                        }`}
-                      >
-                        <span className="text-lg">{c.flag}</span>
-                        <div>
-                          <span className="text-xs font-bold block">{c.code}</span>
-                          <span className="text-[10px] text-slate-500 leading-tight block truncate">
-                            {c.name.split('(')[0]}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Tarifa de Referencia y Condiciones de Pago */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
-                    <span>Tarifa Horaria Referencial</span>
-                    <span className="text-[10px] text-slate-600 font-mono">En {billingCurrency}</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="any"
-                      value={defaultHourlyRate}
-                      onChange={e => setDefaultHourlyRate(e.target.value === '' ? '' : Number(e.target.value))}
-                      placeholder={billingCurrency === 'UF' ? '2.20' : billingCurrency === 'CLP' ? '75000' : '90'}
-                      className="w-full text-xs font-mono font-bold px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden pr-14"
-                    />
-                    <span className="absolute right-3 top-2 text-xs font-mono text-slate-600 font-bold">
-                      {billingCurrency}/hr
-                    </span>
+              {/* Moneda Principal de Cobro - Selector Desplegable Compacto */}
+              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700">
+                    <Coins className="w-4 h-4" />
                   </div>
-                  <p className="text-[10px] text-slate-600 mt-1">
-                    {billingCurrency === 'UF' && 'Ejemplo: 2.10 UF/hr ≈ $85.000 CLP (según UF Banco Central)'}
-                    {billingCurrency === 'CLP' && 'Ejemplo: $75.000 CLP/hr para servicios en moneda nacional'}
-                    {billingCurrency === 'USD' && 'Ejemplo: 85 - 120 USD/hr para consultores internacionales'}
-                    {billingCurrency === 'EUR' && 'Ejemplo: 80 - 110 EUR/hr para consultores europeos'}
-                  </p>
+                  <div>
+                    <label htmlFor="billing-currency-select" className="block text-xs font-bold text-slate-900">
+                      Moneda Principal de Cotización y Facturación *
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Unidad monetaria para cálculo de tarifas horarias ({billingCurrency}).
+                    </p>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Condiciones Comerciales de Pago
-                  </label>
+                <div className="flex items-center gap-2 sm:self-center">
                   <select
-                    value={paymentTerms}
-                    onChange={e => setPaymentTerms(e.target.value)}
-                    className="w-full text-xs font-semibold px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                    id="billing-currency-select"
+                    value={billingCurrency}
+                    onChange={e => {
+                      const newCur = e.target.value as SupportedCurrency;
+                      setBillingCurrency(newCur);
+                      if (!acceptedCurrencies.includes(newCur)) {
+                        setAcceptedCurrencies(prev => [...prev, newCur]);
+                      }
+                    }}
+                    className="text-xs font-bold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-hidden text-slate-900 min-w-[220px] shadow-2xs cursor-pointer"
                   >
-                    <option value="30 días fecha factura">30 días fecha factura</option>
-                    <option value="30 días contra HES aprobada">30 días contra HES aprobada (ML81N)</option>
-                    <option value="15 días fecha boleta de honorarios">15 días fecha boleta de honorarios (Segunda Categoría)</option>
-                    <option value="45 días transferencia internacional Wire">45 días transferencia internacional Wire SWIFT</option>
-                    <option value="60 días fecha factura">60 días fecha factura</option>
-                    <option value="Contado contra entrega de servicio">Contado contra entrega de servicio</option>
+                    {CURRENCY_OPTIONS.map(c => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {c.code} — {c.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              {/* Monedas Secundarias Aceptadas */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Otras Monedas Aceptadas para Órdenes de Compra (OCs)
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {['UF', 'CLP', 'USD', 'EUR', 'MXN', 'BRL'].map(c => {
-                    const isAccepted = acceptedCurrencies.includes(c);
-                    return (
+              {/* SECCIÓN PRINCIPAL: ESPECIALISTAS Y TARIFAS INDIVIDUALES */}
+              <div className="border border-slate-200 bg-slate-50/70 rounded-2xl p-4 sm:p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-200">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-blue-100 text-blue-700">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                        <span>Especialistas SAP & Tarifas por Especialista</span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-bold">
+                          {specialistRates.length} Registrados
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-slate-600">
+                        Indique el cargo, seniority y la tarifa por hora específica de cada consultor en <strong className="text-slate-800">{billingCurrency}</strong>.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Resumen métrico de tarifas */}
+                  {specialistRates.length > 0 && (
+                    <div className="flex items-center gap-3 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs">
+                      <div>
+                        <span className="text-[10px] text-slate-600 block uppercase font-semibold">Rango de Tarifas</span>
+                        <span className="text-xs font-bold text-blue-900 font-mono">
+                          {rateMetrics.formattedRange}
+                        </span>
+                      </div>
+                      <div className="h-6 w-px bg-slate-200" />
+                      <div>
+                        <span className="text-[10px] text-slate-600 block uppercase font-semibold">Promedio</span>
+                        <span className="text-xs font-bold text-slate-900 font-mono">
+                          {rateMetrics.avg} {billingCurrency}/hr
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Lista de Especialistas y sus Tarifas */}
+                <div className="space-y-3">
+                  {specialistRates.length === 0 ? (
+                    <div className="text-center py-8 px-4 bg-white rounded-xl border border-dashed border-slate-300">
+                      <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-xs font-bold text-slate-700">No hay especialistas tarifados registrados</p>
+                      <p className="text-[11px] text-slate-600 mt-0.5 mb-3 max-w-md mx-auto">
+                        Agregue especialistas para definir tarifas horarias específicas por módulo o pre-cargue la plantilla base.
+                      </p>
                       <button
                         type="button"
-                        key={c}
-                        onClick={() => handleToggleAcceptedCurrency(c)}
-                        className={`text-xs px-2.5 py-1 rounded-lg border font-mono font-semibold transition-colors cursor-pointer ${
-                          isAccepted
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                            : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                        }`}
+                        onClick={handlePreloadDefaultSpecialists}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer inline-flex items-center gap-2"
                       >
-                        {isAccepted ? '✓ ' : '+ '} {c}
+                        <Plus className="w-4 h-4" />
+                        <span>Pre-cargar Especialistas Habituales (ABAP, FICO, MM, S/4HANA)</span>
                       </button>
-                    );
-                  })}
+                    </div>
+                  ) : (
+                    specialistRates.map((spec, index) => {
+                      const meta = SPECIALTY_META[spec.specialty];
+                      return (
+                        <div 
+                          key={spec.id} 
+                          className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200 shadow-2xs hover:border-blue-300 transition-all space-y-3"
+                        >
+                          <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 rounded-lg text-xs font-bold font-mono">
+                                {spec.specialty.replace('DEV_', '').replace('SAP_', '')}
+                              </span>
+                              <span className="text-xs text-slate-600 font-medium">
+                                {meta?.label || spec.specialty}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSpecialist(spec.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Eliminar especialista"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                            {/* Cargo o Rol Específico */}
+                            <div className="sm:col-span-5">
+                              <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                                Cargo / Denominación del Rol
+                              </label>
+                              <input
+                                type="text"
+                                value={spec.roleTitle}
+                                onChange={e => handleUpdateSpecialistRate(spec.id, 'roleTitle', e.target.value)}
+                                placeholder="Ej. Consultor Senior ABAP / RICEFW"
+                                className="w-full text-xs font-semibold px-3 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                              />
+                            </div>
+
+                            {/* Nivel de Seniority */}
+                            <div className="sm:col-span-3">
+                              <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                                Seniority
+                              </label>
+                              <select
+                                value={spec.seniority}
+                                onChange={e => handleUpdateSpecialistRate(spec.id, 'seniority', e.target.value as SeniorityLevel)}
+                                className="w-full text-xs font-semibold px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                              >
+                                <option value="Junior">Junior (1-2 años)</option>
+                                <option value="Semi-Senior">Semi-Senior (3-5 años)</option>
+                                <option value="Senior">Senior (5-8 años)</option>
+                                <option value="Lead / Arquitecto">Lead / Arquitecto (8+ años)</option>
+                              </select>
+                            </div>
+
+                            {/* Tarifa por Hora */}
+                            <div className="sm:col-span-4">
+                              <label className="block text-[10px] font-bold text-slate-800 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                <span>Tarifa por Hora *</span>
+                                <span className="text-[10px] text-slate-600 font-mono lowercase">
+                                  ≈ {(Number(spec.hourlyRate || 0) * 8).toLocaleString('es-CL')} {billingCurrency}/día
+                                </span>
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  step="any"
+                                  value={spec.hourlyRate}
+                                  onChange={e => handleUpdateSpecialistRate(spec.id, 'hourlyRate', e.target.value)}
+                                  placeholder={billingCurrency === 'UF' ? '2.20' : '75000'}
+                                  className="w-full text-xs font-mono font-bold px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden pr-16 text-slate-900"
+                                />
+                                <span className="absolute right-2.5 top-1.5 text-[11px] font-mono font-bold text-blue-700 pointer-events-none">
+                                  {billingCurrency}/hr
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Barra de Agregar Especialistas */}
+                <div className="pt-2 border-t border-slate-200">
+                  <span className="text-[11px] font-bold text-slate-700 block mb-2">
+                    + Agregar Especialista por Módulo SAP:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 items-center">
+                    {SAP_SPECIALTIES.map(mod => {
+                      const alreadyAdded = specialistRates.some(r => r.specialty === mod);
+                      return (
+                        <button
+                          type="button"
+                          key={mod}
+                          onClick={() => handleAddSpecialist(mod)}
+                          className={`text-xs px-2.5 py-1 rounded-lg border font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                            alreadyAdded
+                              ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100 shadow-2xs'
+                          }`}
+                        >
+                          <Plus className="w-3 h-3 text-slate-500" />
+                          <span>{mod.replace('DEV_', '').replace('SAP_', '')}</span>
+                          {alreadyAdded && <span className="text-[10px] text-blue-600 font-mono font-bold">(+)</span>}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const customName = prompt('Ingrese el nombre o especialidad del rol SAP:', 'Consultor Especialista');
+                        if (customName) {
+                          handleAddSpecialist('SAP_CUSTOM', customName);
+                        }
+                      }}
+                      className="text-xs px-3 py-1 rounded-lg border border-dashed border-blue-400 bg-blue-50/50 text-blue-700 hover:bg-blue-100 font-semibold transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Otro Rol Personalizado...</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: CONTACTO COMERCIAL, CONDICIONES DE PAGO & DATOS BANCARIOS */}
+          {activeTab === 'contact' && (
+            <div className="space-y-5">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5 flex items-start gap-3 text-xs text-blue-900">
+                <User className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Contacto Comercial, Condiciones de Pago & Datos Bancarios</p>
+                  <p className="text-blue-800 text-[11px] mt-0.5">
+                    Registre el Key Account Manager (KAM), las condiciones comerciales y plazos de pago para compras, junto con la cuenta bancaria de destino para transferencias nacionales o internacionales.
+                  </p>
                 </div>
               </div>
 
-              {/* Datos Bancarios para Transferencia */}
-              <div className="border-t border-slate-200 pt-3">
-                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-2">
-                  <CreditCard className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Datos Bancarios de Pago</span>
-                </span>
+              {/* 1. DATOS DE CONTACTO COMERCIAL / KAM */}
+              <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-2xs space-y-3">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                  <User className="w-4 h-4 text-blue-600" />
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    1. Contraparte Comercial / Key Account Manager (KAM)
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Nombre Completo *</label>
+                    <input
+                      type="text"
+                      value={contactName}
+                      onChange={e => setContactName(e.target.value)}
+                      placeholder="Ej. Carlos Valdivia"
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Cargo / Rol en la Empresa</label>
+                    <input
+                      type="text"
+                      value={contactRole}
+                      onChange={e => setContactRole(e.target.value)}
+                      placeholder="Ej. Socio Director de Práctica SAP / KAM"
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Email de Contacto Comercial</label>
+                    <input
+                      type="email"
+                      value={contactEmail}
+                      onChange={e => setContactEmail(e.target.value)}
+                      placeholder="carlos@proveedor.com"
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Teléfono / WhatsApp</label>
+                    <input
+                      type="text"
+                      value={contactPhone}
+                      onChange={e => setContactPhone(e.target.value)}
+                      placeholder="+56 9 9345 8812"
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. CONDICIONES COMERCIALES DE PAGO */}
+              <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-2xs space-y-3">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                  <Coins className="w-4 h-4 text-emerald-600" />
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    2. Condiciones Comerciales y Plazos de Pago
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Condición Comercial de Pago *
+                    </label>
+                    <select
+                      value={paymentTerms}
+                      onChange={e => setPaymentTerms(e.target.value)}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden cursor-pointer"
+                    >
+                      <option value="30 días fecha factura">30 días fecha factura</option>
+                      <option value="30 días contra HES aprobada">30 días contra HES aprobada (ML81N)</option>
+                      <option value="15 días fecha boleta de honorarios">15 días fecha boleta de honorarios (Segunda Categoría)</option>
+                      <option value="45 días transferencia internacional Wire">45 días transferencia internacional Wire SWIFT</option>
+                      <option value="60 días fecha factura">60 días fecha factura</option>
+                      <option value="Contado contra entrega de servicio">Contado contra entrega de servicio</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Otras Monedas Aceptadas para Órdenes de Compra (OCs)
+                    </label>
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {['UF', 'CLP', 'USD', 'EUR', 'MXN', 'BRL'].map(c => {
+                        const isAccepted = acceptedCurrencies.includes(c as SupportedCurrency);
+                        return (
+                          <button
+                            type="button"
+                            key={c}
+                            onClick={() => handleToggleAcceptedCurrency(c as SupportedCurrency)}
+                            className={`text-xs px-2.5 py-1 rounded-lg border font-mono font-semibold transition-colors cursor-pointer ${
+                              isAccepted
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            {isAccepted ? '✓ ' : '+ '} {c}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. DATOS BANCARIOS DE PAGO */}
+              <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-2xs space-y-3">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                  <CreditCard className="w-4 h-4 text-slate-700" />
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    3. Datos Bancarios de Pago (Transferencia / Wire)
+                  </span>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Banco</label>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Entidad Bancaria</label>
                     <input
                       type="text"
                       value={bankName}
@@ -848,7 +1332,7 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
                     <select
                       value={accountType}
                       onChange={e => setAccountType(e.target.value as any)}
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden cursor-pointer"
                     >
                       <option value="Cuenta Corriente">Cuenta Corriente</option>
                       <option value="Cuenta Vista / RUT">Cuenta Vista / RUT</option>
@@ -869,7 +1353,7 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
                 </div>
 
                 {isForeign && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
                     <div>
                       <label className="block text-[11px] font-semibold text-slate-600 mb-1">Código SWIFT / BIC</label>
                       <input
@@ -893,108 +1377,67 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
                   </div>
                 )}
               </div>
-            </div>
-          )}
 
-          {/* TAB 3: SERVICIOS SAP & CONTACTO */}
-          {activeTab === 'services' && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                  Especialidades y Módulos SAP Ofrecidos
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {SAP_SPECIALTIES.map(spec => {
-                    const isSelected = specialties.includes(spec);
-                    return (
-                      <button
-                        type="button"
-                        key={spec}
-                        onClick={() => handleToggleSpecialty(spec)}
-                        className={`text-xs px-3 py-1.5 rounded-lg border font-semibold transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                            : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                        }`}
-                      >
-                        {isSelected ? '✓ ' : '+ '} {spec.replace('DEV_', '').replace('SAP_', '')}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Datos de Contacto Operativo y Comercial */}
-              <div className="border-t border-slate-200 pt-3">
-                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-2">
-                  <User className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Contacto Comercial / Key Account Manager</span>
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Nombre Completo</label>
-                    <input
-                      type="text"
-                      value={contactName}
-                      onChange={e => setContactName(e.target.value)}
-                      placeholder="Ej. Carlos Valdivia"
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Cargo / Rol</label>
-                    <input
-                      type="text"
-                      value={contactRole}
-                      onChange={e => setContactRole(e.target.value)}
-                      placeholder="Ej. Socio Director de Práctica SAP"
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Email de Contacto</label>
-                    <input
-                      type="email"
-                      value={contactEmail}
-                      onChange={e => setContactEmail(e.target.value)}
-                      placeholder="carlos@proveedor.com"
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Teléfono / WhatsApp</label>
-                    <input
-                      type="text"
-                      value={contactPhone}
-                      onChange={e => setContactPhone(e.target.value)}
-                      placeholder="+56 9 9345 8812"
-                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Sitio web & Notas */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Sitio Web / Perfil Corporativo</label>
-                  <input
-                    type="url"
-                    value={website}
-                    onChange={e => setWebsite(e.target.value)}
-                    placeholder="https://proveedor.com"
-                    className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                  />
+              {/* 4. PERFIL CORPORATIVO & EVALUACIÓN */}
+              <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-2xs space-y-3">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                  <Award className="w-4 h-4 text-indigo-600" />
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    4. Niveles de Seniority & Homologación
+                  </span>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Notas Internas de Evaluación</label>
-                  <input
-                    type="text"
-                    value={notes}
-                    onChange={e => setNotes(e.target.value)}
-                    placeholder="Observaciones de capacidad, homologación o SLAs..."
-                    className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                  />
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1.5">
+                    Niveles de Seniority que ofrece la Consultora
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {(['Junior', 'Semi-Senior', 'Senior', 'Lead / Arquitecto'] as SeniorityLevel[]).map(lvl => {
+                      const isSelected = seniorityLevels.includes(lvl);
+                      return (
+                        <button
+                          type="button"
+                          key={lvl}
+                          onClick={() => {
+                            setSeniorityLevels(prev => 
+                              prev.includes(lvl) 
+                                ? (prev.length > 1 ? prev.filter(l => l !== lvl) : prev) 
+                                : [...prev, lvl]
+                            );
+                          }}
+                          className={`text-xs px-3 py-1.5 rounded-lg border font-semibold transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {isSelected ? '✓ ' : '+ '} {lvl}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Sitio Web / Perfil Corporativo</label>
+                    <input
+                      type="url"
+                      value={website}
+                      onChange={e => setWebsite(e.target.value)}
+                      placeholder="https://proveedor.com"
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Notas Internas de Homologación</label>
+                    <input
+                      type="text"
+                      value={notes}
+                      onChange={e => setNotes(e.target.value)}
+                      placeholder="Observaciones de capacidad técnica, SLAs, contratos marco..."
+                      className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1063,53 +1506,240 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({
               )}
             </div>
           )}
+            </div>
+
+            {/* Right Column: Live SAP Vendor Inspector / Ficha Resumen */}
+            <div className="hidden lg:flex lg:col-span-4 xl:col-span-3 p-5 bg-slate-50/80 border-l border-slate-200 overflow-y-auto flex-col justify-between space-y-4 h-full">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-blue-100 text-blue-700">
+                      <Eye className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Ficha Acreedor SAP</h4>
+                      <p className="text-[10px] text-slate-500 font-mono">LIFNR: {vendorCode}</p>
+                    </div>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    isBlocked 
+                      ? 'bg-rose-100 text-rose-700 border border-rose-200' 
+                      : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                  }`}>
+                    {isBlocked ? '⛔ Bloqueado' : '✓ Habilitado'}
+                  </span>
+                </div>
+
+                {/* Vendor Identification Card */}
+                <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-2xs space-y-2">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h5 className="text-xs font-bold text-slate-900 leading-snug">
+                        {legalName || 'Razón Social no definida'}
+                      </h5>
+                      {fantasyName && (
+                        <p className="text-[11px] text-blue-700 font-semibold">{fantasyName}</p>
+                      )}
+                    </div>
+                    <span className="text-base" title={country}>
+                      {country === 'Chile' ? '🇨🇱' : country === 'Estados Unidos' ? '🇺🇸' : country === 'España' ? '🇪🇸' : country === 'México' ? '🇲🇽' : '🌐'}
+                    </span>
+                  </div>
+
+                  <div className="text-[11px] space-y-1.5 pt-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600 font-medium">Identificación Fiscal:</span>
+                      <span className="font-mono font-bold text-slate-900">{taxId || 'Sin registrar'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600 font-medium">RUT SII Módulo 11:</span>
+                      {!isForeign ? (
+                        validateRut(taxId) ? (
+                          <span className="text-emerald-700 font-bold flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Válido
+                          </span>
+                        ) : (
+                          <span className="text-rose-600 font-bold">Incompleto / Inválido</span>
+                        )
+                      ) : (
+                        <span className="text-blue-700 font-medium">Internacional</span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600 font-medium">DTE Habitual:</span>
+                      <span className="text-slate-800 truncate max-w-[150px]">{dteType.split('(')[0]}</span>
+                    </div>
+                    {dteBillingEmail && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600 font-medium">Casilla DTE:</span>
+                        <span className="text-blue-700 font-mono text-[10px] truncate max-w-[140px]">{dteBillingEmail}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600 font-medium">Ubicación:</span>
+                      <span className="text-slate-800 text-[10px] truncate max-w-[150px]">
+                        {comuna ? `${comuna}, ` : ''}{country}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Commercial & Currency Card */}
+                <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-2xs space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 block">Condiciones & Tarifas</span>
+                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-600">Moneda Principal:</span>
+                      <span className="text-xs font-bold text-blue-900">{billingCurrency}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-600">Rango Tarifas:</span>
+                      <span className="text-xs font-mono font-bold text-slate-900">
+                        {rateMetrics.formattedRange}
+                      </span>
+                    </div>
+                    {rateMetrics.count > 1 && (
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-200 text-[10px]">
+                        <span className="text-slate-500">Tarifa Promedio:</span>
+                        <span className="font-mono font-semibold text-slate-700">{rateMetrics.avg} {billingCurrency}/hr</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-600 space-y-0.5">
+                    <p><strong>Pago:</strong> {paymentTerms}</p>
+                    {bankName && (
+                      <p><strong>Banco:</strong> {bankName} ({accountType})</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* SAP Specialist Rates Breakdown Card */}
+                <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                      Tarifas por Especialista ({specialistRates.length})
+                    </span>
+                    <span className="text-[10px] text-blue-700 font-mono font-semibold">
+                      {billingCurrency}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {specialistRates.length > 0 ? (
+                      specialistRates.map(s => (
+                        <div key={s.id} className="flex items-center justify-between p-1.5 bg-slate-50 rounded-lg border border-slate-100 text-[11px]">
+                          <div className="truncate mr-2">
+                            <span className="font-bold text-slate-800 text-[10px] block truncate">
+                              {s.roleTitle || s.specialty.replace('DEV_', '').replace('SAP_', '')}
+                            </span>
+                            <span className="text-[9px] text-slate-500 block">
+                              {s.specialty.replace('DEV_', '').replace('SAP_', '')} · {s.seniority}
+                            </span>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="font-mono font-bold text-blue-900 text-xs">
+                              {Number(s.hourlyRate || 0).toLocaleString('es-CL')}
+                            </span>
+                            <span className="text-[9px] text-slate-500 block font-mono">
+                              /hr
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-[11px] text-slate-500 italic block py-1">Sin especialistas registrados</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* SAP XK05 Status Notice */}
+                {isBlocked ? (
+                  <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-rose-900 text-xs space-y-1">
+                    <p className="font-bold flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>Bloqueado para Compras (XK05)</span>
+                    </p>
+                    <p className="text-[11px] text-rose-700 leading-snug">
+                      {blockingReason || 'Bloqueo administrativo activo. No se permiten SOLPEDs ni pedidos.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-900 text-xs flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="text-[11px] font-medium leading-snug">
+                      Habilitado para SOLPEDs (ME51N) y Órdenes de Compra (ME21N).
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Quick Save CTA in sidebar */}
+              <div className="pt-2 border-t border-slate-200">
+                <button
+                  type="submit"
+                  className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-sm flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{supplierToEdit ? 'Guardar Cambios' : 'Registrar Proveedor'}</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
 
           {/* Footer Buttons */}
-          <div className="border-t border-slate-200 pt-4 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
-            >
-              Cancelar
-            </button>
+          <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <span className="hidden sm:inline text-xs text-slate-600">
+                {activeTab === 'sii' && 'Paso 1: Cumplimiento Tributario SII'}
+                {activeTab === 'currency' && 'Paso 2: Moneda de Cobro y Tarifas por Especialista'}
+                {activeTab === 'contact' && 'Paso 3: Contacto, Condiciones de Pago y Bancos'}
+                {activeTab === 'blocking' && 'Paso 4: Bloqueo Centralizado XK05'}
+              </span>
+            </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
               {activeTab !== 'sii' && (
                 <button
                   type="button"
                   onClick={() => {
-                    if (activeTab === 'blocking') setActiveTab('services');
-                    else if (activeTab === 'services') setActiveTab('currency');
+                    if (activeTab === 'blocking') setActiveTab('contact');
+                    else if (activeTab === 'contact') setActiveTab('currency');
                     else if (activeTab === 'currency') setActiveTab('sii');
                   }}
-                  className="px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                  className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer shadow-2xs"
                 >
                   ← Anterior
                 </button>
               )}
 
-              {activeTab !== 'blocking' ? (
+              {activeTab !== 'blocking' && (
                 <button
                   type="button"
                   onClick={() => {
                     if (activeTab === 'sii') setActiveTab('currency');
-                    else if (activeTab === 'currency') setActiveTab('services');
-                    else if (activeTab === 'services') setActiveTab('blocking');
+                    else if (activeTab === 'currency') setActiveTab('contact');
+                    else if (activeTab === 'contact') setActiveTab('blocking');
                   }}
                   className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-xs"
                 >
                   Siguiente paso →
                 </button>
-              ) : (
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-md flex items-center gap-1.5"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{supplierToEdit ? 'Guardar Modificaciones' : 'Registrar en Maestro SAP'}</span>
-                </button>
               )}
+
+              <button
+                type="submit"
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-md flex items-center gap-1.5"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>{supplierToEdit ? 'Guardar Modificaciones' : 'Registrar en Maestro SAP'}</span>
+              </button>
             </div>
           </div>
         </form>
