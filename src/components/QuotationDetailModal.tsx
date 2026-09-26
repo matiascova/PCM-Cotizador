@@ -30,7 +30,7 @@ import { calculateQuotationTotals, formatCurrency, getStatusBadge } from '../uti
 import { downloadDossierPDF, downloadQuotationPDF } from '../utils/pdfGenerator';
 import { convertUfToClp, convertClpToUf, formatUfValue } from '../services/bcentralService';
 import { GanttModule } from './gantt/GanttModule';
-import { createDefaultGanttPlanForQuotation } from '../data/ganttTemplates';
+import { createDefaultGanttPlanForQuotation, translateGanttPlanToSpanish } from '../data/ganttTemplates';
 
 interface QuotationDetailModalProps {
   quote: Quotation;
@@ -834,10 +834,12 @@ export const QuotationDetailModal: React.FC<QuotationDetailModalProps> = ({
               </div>
 
               <GanttModule
-                plan={quote.ganttPlan || createDefaultGanttPlanForQuotation(
-                  quote.project.projectTitle,
-                  quote.project.estimatedStartDate,
-                  quote.client.country
+                plan={translateGanttPlanToSpanish(
+                  quote.ganttPlan || createDefaultGanttPlanForQuotation(
+                    quote.project.projectTitle,
+                    quote.project.estimatedStartDate,
+                    quote.client.country
+                  )
                 )}
                 onChangePlan={(updatedPlan) => {
                   onUpdateQuote({

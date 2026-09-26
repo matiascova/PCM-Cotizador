@@ -115,7 +115,7 @@ export const GANTT_TEMPLATES: GanttTemplatePreset[] = [
       stages: [
         {
           id: 'act-1',
-          name: '1. Prepare & Kickoff Inicial',
+          name: '1. Preparación y Arranque Inicial',
           duration: 1.5,
           durationUnit: 'weeks',
           startType: 'sequential',
@@ -126,59 +126,59 @@ export const GANTT_TEMPLATES: GanttTemplatePreset[] = [
         },
         {
           id: 'act-2',
-          name: '2. Explore & Fit-to-Standard (BBP)',
+          name: '2. Exploración y Ajuste al Estándar (BBP)',
           duration: 3,
           durationUnit: 'weeks',
           startType: 'sequential',
           isMilestone: false,
           progress: 0,
           responsible: 'Líderes Funcionales SAP',
-          notes: 'Talleres de mejores prácticas y especificaciones funcionales.',
+          notes: 'Talleres de mejores prácticas, procesos y especificaciones funcionales.',
         },
         {
           id: 'act-3',
-          name: '3. Realize (Parametrización & ABAP)',
+          name: '3. Realización (Parametrización y Desarrollo ABAP)',
           duration: 5,
           durationUnit: 'weeks',
           startType: 'sequential',
           isMilestone: false,
           progress: 0,
-          responsible: 'Consultores Funcionales & ABAP',
-          notes: 'Customizing, desarrollos, interfaces y pruebas unitarias.',
+          responsible: 'Consultores Funcionales y ABAP',
+          notes: 'Parametrización customizing, desarrollos, interfaces y pruebas unitarias.',
         },
         {
           id: 'act-4',
-          name: '4. Pruebas Integrales & UAT',
+          name: '4. Pruebas Integrales y Aceptación (UAT)',
           duration: 2.5,
           durationUnit: 'weeks',
           startType: 'sequential',
           isMilestone: false,
           progress: 0,
-          responsible: 'Key Users & QA',
-          notes: 'Pruebas extremo a extremo con validación de usuarios clave.',
+          responsible: 'Usuarios Clave y QA',
+          notes: 'Pruebas extremo a extremo con validación y aceptación de usuarios clave.',
         },
         {
           id: 'act-5',
-          name: '5. Deploy & Cutover Final',
+          name: '5. Despliegue y Transición Final (Cutover)',
           duration: 1.5,
           durationUnit: 'weeks',
           startType: 'sequential',
           isMilestone: false,
           progress: 0,
-          responsible: 'Líder Basis & Migración',
-          notes: 'Carga final de datos maestros, saldos y preparativos de salida.',
+          responsible: 'Líder Basis y Migración',
+          notes: 'Carga final de datos maestros, saldos contables y preparativos de salida.',
         },
         {
           id: 'act-6',
-          name: '6. Salida en Vivo (Go-Live)',
+          name: '6. Salida en Vivo (Puesta en Marcha)',
           duration: 1,
           durationUnit: 'weeks',
           startType: 'sequential',
           isMilestone: true,
           milestoneIcon: 'star',
           progress: 0,
-          responsible: 'Comité Directivo & Soporte',
-          notes: 'Inicio formal de operación en productivo y soporte Hipercare.',
+          responsible: 'Comité Directivo y Soporte',
+          notes: 'Inicio formal de operación en productivo y soporte prioritario Hipercare.',
         },
       ],
     },
@@ -216,7 +216,7 @@ export const GANTT_TEMPLATES: GanttTemplatePreset[] = [
       stages: [
         {
           id: 's1',
-          name: 'Inicio de Proyecto & Gate 1',
+          name: 'Inicio de Proyecto y Lanzamiento',
           duration: 1,
           durationUnit: 'weeks',
           startType: 'sequential',
@@ -227,7 +227,7 @@ export const GANTT_TEMPLATES: GanttTemplatePreset[] = [
         },
         {
           id: 's2',
-          name: 'Business Blueprint (BBP)',
+          name: 'Diseño y Definición de Procesos (BBP)',
           duration: 2.5,
           durationUnit: 'weeks',
           startType: 'sequential',
@@ -238,58 +238,58 @@ export const GANTT_TEMPLATES: GanttTemplatePreset[] = [
         },
         {
           id: 's3',
-          name: 'Realización & Configuración',
+          name: 'Realización y Configuración',
           duration: 4,
           durationUnit: 'weeks',
           startType: 'sequential',
           isMilestone: false,
           progress: 0,
-          responsible: 'Consultores SAP & ABAP',
+          responsible: 'Consultores SAP y ABAP',
           notes: 'Parametrización del sistema y desarrollos a la medida.',
         },
         {
           id: 's4',
-          name: 'Pruebas Integrales & UAT',
+          name: 'Pruebas Integrales y Aceptación (UAT)',
           duration: 2,
           durationUnit: 'weeks',
           startType: 'sequential',
           isMilestone: false,
           progress: 0,
-          responsible: 'Key Users & QA',
+          responsible: 'Usuarios Clave y QA',
           notes: 'Validación de flujos end-to-end y aceptación formal.',
         },
         {
           id: 's5',
-          name: 'Capacitación Usuarios Finales',
+          name: 'Capacitación a Usuarios Finales',
           duration: 1.5,
           durationUnit: 'weeks',
           startType: 'sequential',
           isMilestone: false,
           progress: 0,
-          responsible: 'Consultores & Gestión del Cambio',
+          responsible: 'Consultores y Gestión del Cambio',
           notes: 'Entrenamiento de operadores y entrega de manuales.',
         },
         {
           id: 's6',
-          name: 'Cutover & Carga de Datos',
+          name: 'Transición y Carga de Datos (Cutover)',
           duration: 1,
           durationUnit: 'weeks',
           startType: 'sequential',
           isMilestone: false,
           progress: 0,
-          responsible: 'Equipo Basis & Datos',
+          responsible: 'Equipo Basis y Datos',
           notes: 'Congelamiento de datos, cargas finales y checklist de salida.',
         },
         {
           id: 's7',
-          name: 'Salida en Vivo & Hipercare',
+          name: 'Salida en Vivo y Soporte Hipercare',
           duration: 1,
           durationUnit: 'weeks',
           startType: 'sequential',
           isMilestone: true,
           milestoneIcon: 'star',
           progress: 0,
-          responsible: 'Comité Directivo & Soporte',
+          responsible: 'Comité Directivo y Soporte',
           notes: 'Go-Live oficial e inicio de soporte prioritario post puesta en marcha.',
         },
       ],
@@ -328,7 +328,7 @@ export const GANTT_TEMPLATES: GanttTemplatePreset[] = [
       stages: [
         {
           id: 'ro-1',
-          name: 'Levantamiento & Definición',
+          name: 'Levantamiento y Definición',
           duration: 1,
           durationUnit: 'weeks',
           startType: 'sequential',
@@ -337,7 +337,7 @@ export const GANTT_TEMPLATES: GanttTemplatePreset[] = [
         },
         {
           id: 'ro-2',
-          name: 'Configuración & Pruebas Unitarias',
+          name: 'Configuración y Pruebas Unitarias',
           duration: 3,
           durationUnit: 'weeks',
           startType: 'sequential',
@@ -355,7 +355,7 @@ export const GANTT_TEMPLATES: GanttTemplatePreset[] = [
         },
         {
           id: 'ro-4',
-          name: 'Puesta en Productivo (Go-Live)',
+          name: 'Puesta en Productivo (Salida en Vivo)',
           duration: 1,
           durationUnit: 'weeks',
           startType: 'sequential',
@@ -400,3 +400,59 @@ export function createDefaultGanttPlanForQuotation(
     stages: JSON.parse(JSON.stringify(base.stages)),
   };
 }
+
+/**
+ * Diccionario de equivalencias para migrar nombres de fases históricas o en inglés a español
+ */
+export const SPANISH_PHASE_NAMES_MAP: Record<string, string> = {
+  // Plantilla SAP Activate estándar
+  '1. Prepare & Kickoff Inicial': '1. Preparación y Arranque Inicial',
+  '2. Explore & Fit-to-Standard (BBP)': '2. Exploración y Ajuste al Estándar (BBP)',
+  '3. Realize (Parametrización & ABAP)': '3. Realización (Parametrización y Desarrollo ABAP)',
+  '4. Pruebas Integrales & UAT': '4. Pruebas Integrales y Aceptación (UAT)',
+  '5. Deploy & Cutover Final': '5. Despliegue y Transición Final (Cutover)',
+  '6. Salida en Vivo (Go-Live)': '6. Salida en Vivo (Puesta en Marcha)',
+
+  // Variantes sin numeración o variaciones comunes
+  'Prepare & Kickoff Inicial': 'Preparación y Arranque Inicial',
+  'Explore & Fit-to-Standard (BBP)': 'Exploración y Ajuste al Estándar (BBP)',
+  'Realize (Parametrización & ABAP)': 'Realización (Parametrización y Desarrollo ABAP)',
+  'Pruebas Integrales & UAT': 'Pruebas Integrales y Aceptación (UAT)',
+  'Deploy & Cutover Final': 'Despliegue y Transición Final (Cutover)',
+  'Salida en Vivo (Go-Live)': 'Salida en Vivo (Puesta en Marcha)',
+
+  // Plantilla Implementación S/4HANA
+  'Inicio de Proyecto & Gate 1': 'Inicio de Proyecto y Lanzamiento',
+  'Business Blueprint (BBP)': 'Diseño y Definición de Procesos (BBP)',
+  'Realización & Configuración': 'Realización y Configuración',
+  'Capacitación Usuarios Finales': 'Capacitación a Usuarios Finales',
+  'Cutover & Carga de Datos': 'Transición y Carga de Datos (Cutover)',
+  'Salida en Vivo & Hipercare': 'Salida en Vivo y Soporte Hipercare',
+
+  // Plantilla Roll-out
+  'Levantamiento & Definición': 'Levantamiento y Definición',
+  'Configuración & Pruebas Unitarias': 'Configuración y Pruebas Unitarias',
+  'Puesta en Productivo (Go-Live)': 'Puesta en Productivo (Salida en Vivo)',
+};
+
+/**
+ * Traduce y normaliza los nombres de las etapas de una Carta Gantt a español
+ */
+export function translateGanttPlanToSpanish(plan: ProjectPlan): ProjectPlan {
+  if (!plan || !plan.stages) return plan;
+  return {
+    ...plan,
+    stages: plan.stages.map((stage) => {
+      const trimmedName = stage.name?.trim();
+      const spanishName = SPANISH_PHASE_NAMES_MAP[trimmedName];
+      if (spanishName) {
+        return {
+          ...stage,
+          name: spanishName,
+        };
+      }
+      return stage;
+    }),
+  };
+}
+

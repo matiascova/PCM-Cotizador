@@ -3,11 +3,11 @@ import autoTable from 'jspdf-autotable';
 import { toJpeg, getFontEmbedCSS } from 'html-to-image';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { Quotation, CompanyProfile } from '../types';
+import { Quotation, CompanyProfile, DocumentLanguage } from '../types';
 import { calculateQuotationTotals, formatCurrency } from './calculations';
 import { convertUfToClp } from '../services/bcentralService';
 import { DossierEditorialView } from '../components/DossierEditorialView';
-import { createDefaultGanttPlanForQuotation } from '../data/ganttTemplates';
+import { createDefaultGanttPlanForQuotation, translateGanttPlanToSpanish } from '../data/ganttTemplates';
 
 export function generateQuotationPDF(quote: Quotation): jsPDF {
   const doc = new jsPDF({
@@ -306,10 +306,12 @@ export function generateQuotationPDF(quote: Quotation): jsPDF {
   currentY = doc.lastAutoTable.finalY + 7;
 
   // 3.1 Cronograma Ejecutivo de Fases Gantt SAP
-  const effectiveGanttPlan = quote.ganttPlan || createDefaultGanttPlanForQuotation(
-    quote.project.projectTitle,
-    quote.project.estimatedStartDate,
-    quote.client.country
+  const effectiveGanttPlan = translateGanttPlanToSpanish(
+    quote.ganttPlan || createDefaultGanttPlanForQuotation(
+      quote.project.projectTitle,
+      quote.project.estimatedStartDate,
+      quote.client.country
+    )
   );
 
   if (effectiveGanttPlan && effectiveGanttPlan.stages && effectiveGanttPlan.stages.length > 0) {
@@ -348,10 +350,10 @@ export function generateQuotationPDF(quote: Quotation): jsPDF {
         cellPadding: 2
       },
       columnStyles: {
-        0: { cellWidth: 70, fontStyle: 'bold' },
-        1: { cellWidth: 35 },
-        2: { cellWidth: 35 },
-        3: { cellWidth: 40 }
+        0: { cellWidth: 82, fontStyle: 'bold' },
+        1: { cellWidth: 32 },
+        2: { cellWidth: 32 },
+        3: { cellWidth: 34 }
       }
     });
 
@@ -505,48 +507,75 @@ export function generateQuotationPDF(quote: Quotation): jsPDF {
 export async function downloadDossierPDF(
   quote: Quotation,
   companyProfile?: CompanyProfile,
-  onProgress?: (status: string, percent: number) => void
+  onProgress?: (status: string, percent: number) => void,
+  language?: DocumentLanguage
 ): Promise<void> {
   let stagingContainer: HTMLDivElement | null = null;
   let root: ReturnType<typeof createRoot> | null = null;
+  const docLang: DocumentLanguage = language || quote.documentLanguage || 'es';
 
   try {
-    // 1. Check if there are already dossier pages in the document (e.g. in QuotationPrintView)
-    let pageElements = Array.from(document.querySelectorAll<HTMLElement>('.dossier-page'));
+    if (onProgress) {
+      const msg = docLang === 'en' 
+        ? 'Preparing high-resolution Dossier pages...' 
+        : docLang === 'pt' 
+        ? 'Preparando páginas do Dossier em alta resolução...' 
+        : 'Preparando páginas del Dossier en alta resolución...';
+      onProgress(msg, 5);
+    }
+    
+    // Always render into a dedicated, unconstrained staging container at exact executive A4 dimensions (1060px x 1499px)
+    stagingContainer = document.createElement('div');
+    stagingContainer.id = 'dossier-pdf-staging-mount';
+    stagingContainer.style.position = 'fixed';
+    stagingContainer.style.left = '-10000px';
+    stagingContainer.style.top = '0';
+    stagingContainer.style.width = '1060px';
+    stagingContainer.style.zIndex = '-9999';
+    stagingContainer.style.backgroundColor = '#020617';
+    document.body.appendChild(stagingContainer);
 
-    // 2. If no dossier pages found in current view, mount DossierEditorialView in a hidden staging container
-    if (pageElements.length < 7) {
-      if (onProgress) onProgress('Preparando páginas del Dossier...', 5);
-      stagingContainer = document.createElement('div');
-      stagingContainer.id = 'dossier-pdf-staging-mount';
-      stagingContainer.style.position = 'fixed';
-      stagingContainer.style.left = '-10000px';
-      stagingContainer.style.top = '0';
-      stagingContainer.style.width = '800px';
-      stagingContainer.style.zIndex = '-9999';
-      stagingContainer.style.backgroundColor = '#020617';
-      document.body.appendChild(stagingContainer);
+    root = createRoot(stagingContainer);
+    root.render(
+      React.createElement(DossierEditorialView, {
+        quote: {
+          ...quote,
+          documentLanguage: docLang
+        },
+        companyProfile,
+        isPrintStaging: true,
+        language: docLang
+      })
+    );
 
-      root = createRoot(stagingContainer);
-      root.render(
-        React.createElement(DossierEditorialView, {
-          quote,
-          companyProfile,
-          isPrintStaging: true
+    // 1. Wait for document fonts to be ready
+    if (document.fonts) {
+      try {
+        await document.fonts.ready;
+      } catch {
+        // ignore font ready errors
+      }
+    }
+
+    // 2. Allow DOM layout and React components to fully mount
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // 3. Ensure all images (logos, cover image) inside the staging container are loaded
+    const images = Array.from(stagingContainer.querySelectorAll<HTMLImageElement>('img'));
+    if (images.length > 0) {
+      await Promise.all(
+        images.map((img) => {
+          if (img.complete && img.naturalHeight !== 0) return Promise.resolve(true);
+          return new Promise((resolve) => {
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(true);
+            setTimeout(() => resolve(true), 1200);
+          });
         })
       );
-
-      // Wait for document fonts and DOM layout reflow to stabilize
-      if (document.fonts) {
-        try {
-          await document.fonts.ready;
-        } catch {
-          // ignore font ready errors
-        }
-      }
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      pageElements = Array.from(stagingContainer.querySelectorAll<HTMLElement>('.dossier-page'));
     }
+
+    const pageElements = Array.from(stagingContainer.querySelectorAll<HTMLElement>('.dossier-page'));
 
     if (pageElements.length === 0) {
       throw new Error('No se encontraron páginas del dossier para generar el PDF');
@@ -555,7 +584,7 @@ export async function downloadDossierPDF(
     // Embed fonts if available to avoid rasterization font fallbacks and distortion
     let fontEmbedCSS: string | undefined;
     try {
-      fontEmbedCSS = await getFontEmbedCSS(stagingContainer || document.body);
+      fontEmbedCSS = await getFontEmbedCSS(stagingContainer);
     } catch {
       // ignore font embed extraction errors if restricted
     }
@@ -601,12 +630,13 @@ export async function downloadDossierPDF(
 
     const safeCode = (quote.code || 'COT').replace(/[^a-zA-Z0-9-_]/g, '_');
     const safeClient = (quote.client?.fantasyName || quote.client?.companyName || 'Cliente').replace(/[^a-zA-Z0-9-_]/g, '_');
-    const filename = `Cotizacion_${safeCode}_Dossier_Editorial_${safeClient}.pdf`;
+    const langSuffix = docLang !== 'es' ? `_${docLang.toUpperCase()}` : '';
+    const filename = `Cotizacion_${safeCode}_Dossier_Editorial${langSuffix}_${safeClient}.pdf`;
     
     pdf.save(filename);
 
     if (onProgress) {
-      onProgress('¡Completado!', 100);
+      onProgress(docLang === 'en' ? 'Completed!' : docLang === 'pt' ? 'Concluído!' : '¡Completado!', 100);
     }
   } catch (error) {
     console.error('Error generating Dossier Editorial PDF, falling back to summary PDF:', error);
@@ -633,8 +663,8 @@ export async function downloadDossierPDF(
  * Main PDF download function used throughout the application.
  * Generates the full 7-page Dossier Editorial format.
  */
-export function downloadQuotationPDF(quote: Quotation, companyProfile?: CompanyProfile): void {
-  downloadDossierPDF(quote, companyProfile);
+export function downloadQuotationPDF(quote: Quotation, companyProfile?: CompanyProfile, language?: DocumentLanguage): void {
+  downloadDossierPDF(quote, companyProfile, undefined, language);
 }
 
 /**

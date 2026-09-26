@@ -324,6 +324,57 @@ async function startServer() {
     }
   });
 
+  // Enterprise Document Translation endpoint with Gemini
+  app.post('/api/translate', async (req, res) => {
+    try {
+      const { texts, targetLanguage, sourceLanguage } = req.body;
+      if (!texts || !Array.isArray(texts)) {
+        return res.status(400).json({ error: 'texts must be an array of strings' });
+      }
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.json({ translatedTexts: texts, fallback: true, message: 'GEMINI_API_KEY not configured' });
+      }
+
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey });
+
+      const targetLangName = targetLanguage === 'en' 
+        ? 'English' 
+        : targetLanguage === 'pt' 
+        ? 'Portuguese (Brazil)' 
+        : 'Spanish';
+
+      const prompt = `You are an expert enterprise translator specializing in SAP, ERP, and IT commercial proposals and legal agreements.
+Translate the following array of texts from ${sourceLanguage || 'Spanish'} to ${targetLangName}.
+Requirements:
+1. Maintain high corporate, professional, and consultative tone.
+2. Keep SAP codes, module names, technical abbreviations (e.g. S/4HANA, BBP, UAT, Cutover, Go-Live, ABAP, Fiori, HCM, MM, FICO, UF, CLP, USD) and currency values intact.
+3. Return ONLY a valid JSON array of strings corresponding 1-to-1 in order with the input array. Do NOT wrap in markdown or backticks.
+
+Input texts:
+${JSON.stringify(texts)}`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      const raw = (response.text || '').trim();
+      const cleaned = raw.replace(/^```(json)?/i, '').replace(/```$/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+
+      if (Array.isArray(parsed)) {
+        return res.json({ translatedTexts: parsed, success: true });
+      }
+      return res.json({ translatedTexts: texts, fallback: true });
+    } catch (err: any) {
+      console.warn('[Translate API] Warning:', err?.message || err);
+      return res.json({ translatedTexts: req.body?.texts || [], fallback: true, error: String(err) });
+    }
+  });
+
   // Vite middleware for development vs static build in production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

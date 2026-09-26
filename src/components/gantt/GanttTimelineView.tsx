@@ -338,8 +338,8 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
         {/* LEFT COLUMN: Stages List */}
         <div className={`${
           isCompactForPdf
-            ? 'w-[200px] shrink-0'
-            : 'w-full md:w-[280px] lg:w-[300px] flex-shrink-0'
+            ? 'w-[275px] shrink-0'
+            : 'w-full md:w-[370px] lg:w-[400px] xl:w-[420px] flex-shrink-0'
         } flex flex-col`}>
           {/* Header Row */}
           <div
@@ -365,7 +365,7 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
                   id={`stage-row-left-${stage.id}`}
                   onClick={() => onSelectStage && onSelectStage(stage.id)}
                   className={`${
-                    isCompactForPdf ? 'min-h-[44px] py-1 px-3' : 'h-11 px-4'
+                    isCompactForPdf ? 'min-h-[44px] py-1 px-3' : 'h-11 px-3.5 sm:px-4'
                   } flex items-center justify-between gap-2 text-xs cursor-pointer transition-colors ${
                     isSelected
                       ? isDarkMode
@@ -393,9 +393,7 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
                       />
                     )}
                     <span
-                      className={`text-xs leading-tight ${
-                        isCompactForPdf ? 'line-clamp-2' : 'truncate'
-                      } ${
+                      className={`text-xs leading-snug line-clamp-2 break-words ${
                         stage.isMilestone
                           ? 'font-bold text-slate-900 dark:text-white'
                           : 'font-medium text-slate-800 dark:text-slate-200'
@@ -613,7 +611,7 @@ export const GanttTimelineView: React.FC<GanttTimelineViewProps> = ({
                                 stage.isMilestone
                                   ? 'font-bold text-slate-900 dark:text-white'
                                   : 'font-semibold text-slate-800 dark:text-slate-200'
-                              } ${isCompactForPdf ? 'max-w-[120px] truncate' : ''}`}
+                              } ${isCompactForPdf ? 'max-w-[180px] truncate' : ''}`}
                             >
                               {stage.name}
                             </span>

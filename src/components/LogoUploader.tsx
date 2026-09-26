@@ -3,21 +3,37 @@ import { Upload, X, Image as ImageIcon, Link as LinkIcon, Check } from 'lucide-r
 
 interface LogoUploaderProps {
   currentLogo?: string;
-  onLogoChange: (logoUrl: string) => void;
+  value?: string;
+  onLogoChange?: (logoUrl: string) => void;
+  onChange?: (logoUrl: string) => void;
   label?: string;
   description?: string;
+  helperText?: string;
   recommendedSize?: string;
+  placeholderText?: string;
   previewBg?: 'light' | 'dark' | 'transparent';
 }
 
 export const LogoUploader: React.FC<LogoUploaderProps> = ({
   currentLogo,
+  value,
   onLogoChange,
+  onChange,
   label = 'Logo Corporativo',
-  description = 'Suba un archivo PNG, JPG o SVG con fondo transparente para mejor calidad en portadas y documentos.',
-  recommendedSize = 'Recomendado: 400x160 px o superior (máx. 2MB)',
+  description,
+  helperText,
+  recommendedSize,
+  placeholderText,
   previewBg = 'light'
 }) => {
+  const activeLogo = currentLogo ?? value ?? '';
+  const updateLogo = (newUrl: string) => {
+    if (onLogoChange) onLogoChange(newUrl);
+    if (onChange) onChange(newUrl);
+  };
+  const activeDescription = description || helperText || 'Suba un archivo PNG, JPG o SVG con fondo transparente para mejor calidad en portadas y documentos.';
+  const activeRecommendedSize = recommendedSize || placeholderText || 'Recomendado: 400x160 px o superior (máx. 4MB)';
+
   const [isDragging, setIsDragging] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [customUrl, setCustomUrl] = useState('');
@@ -26,13 +42,14 @@ export const LogoUploader: React.FC<LogoUploaderProps> = ({
 
   const handleFileProcess = (file: File) => {
     setErrorMessage('');
-    if (!file.type.startsWith('image/')) {
+    const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|svg|webp|gif|bmp|ico)$/i.test(file.name);
+    if (!isImage) {
       setErrorMessage('El archivo seleccionado no es una imagen válida.');
       return;
     }
 
-    if (file.size > 2.5 * 1024 * 1024) {
-      setErrorMessage('La imagen no debe superar los 2.5 MB para un rendimiento óptimo.');
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMessage('La imagen no debe superar los 5 MB para un rendimiento óptimo.');
       return;
     }
 
@@ -40,7 +57,7 @@ export const LogoUploader: React.FC<LogoUploaderProps> = ({
     reader.onload = e => {
       const result = e.target?.result as string;
       if (result) {
-        onLogoChange(result);
+        updateLogo(result);
       }
     };
     reader.onerror = () => {
@@ -68,7 +85,7 @@ export const LogoUploader: React.FC<LogoUploaderProps> = ({
 
   const handleApplyUrl = () => {
     if (customUrl.trim()) {
-      onLogoChange(customUrl.trim());
+      updateLogo(customUrl.trim());
       setShowUrlInput(false);
       setCustomUrl('');
     }
@@ -80,10 +97,10 @@ export const LogoUploader: React.FC<LogoUploaderProps> = ({
         <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
           {label}
         </label>
-        {currentLogo && (
+        {activeLogo && (
           <button
             type="button"
-            onClick={() => onLogoChange('')}
+            onClick={() => updateLogo('')}
             className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
@@ -92,7 +109,7 @@ export const LogoUploader: React.FC<LogoUploaderProps> = ({
         )}
       </div>
 
-      {currentLogo ? (
+      {activeLogo ? (
         /* Preview with Action Overlay */
         <div className="flex flex-col sm:flex-row items-center gap-4 p-3.5 rounded-xl border border-slate-200 bg-slate-50">
           <div 
@@ -101,7 +118,7 @@ export const LogoUploader: React.FC<LogoUploaderProps> = ({
             }`}
           >
             <img
-              src={currentLogo}
+              src={activeLogo}
               alt="Logo cargado"
               className="max-h-full max-w-full object-contain"
               onError={() => setErrorMessage('No se pudo cargar la imagen desde la URL provista.')}
@@ -159,7 +176,7 @@ export const LogoUploader: React.FC<LogoUploaderProps> = ({
               Formatos soportados: PNG, SVG, JPG o WebP
             </p>
             <p className="text-[10px] text-slate-400">
-              {recommendedSize}
+              {activeRecommendedSize}
             </p>
           </div>
 
@@ -182,7 +199,10 @@ export const LogoUploader: React.FC<LogoUploaderProps> = ({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/png, image/jpeg, image/svg+xml, image/webp"
+        accept="image/png, image/jpeg, image/jpg, image/svg+xml, image/webp, image/*"
+        onClick={e => {
+          (e.target as HTMLInputElement).value = '';
+        }}
         onChange={e => {
           if (e.target.files && e.target.files.length > 0) {
             handleFileProcess(e.target.files[0]);
@@ -230,7 +250,7 @@ export const LogoUploader: React.FC<LogoUploaderProps> = ({
       )}
 
       <p className="text-[11px] text-slate-400 leading-tight">
-        {description}
+        {activeDescription}
       </p>
     </div>
   );

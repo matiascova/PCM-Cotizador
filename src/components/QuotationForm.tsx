@@ -30,7 +30,10 @@ import {
   Copy,
   Wand2,
   User,
-  ShoppingBag
+  ShoppingBag,
+  ChevronDown,
+  ChevronUp,
+  Palette
 } from 'lucide-react';
 import { 
   Quotation, 
@@ -50,10 +53,18 @@ import {
   Professional,
   ClientMasterItem,
   ResourceStaffingType,
-  ProjectPlan
+  ProjectPlan,
+  DossierColorPaletteId,
+  DocumentLanguage
 } from '../types';
+import { 
+  DOSSIER_COLOR_PALETTES, 
+  getDossierPalette, 
+  DEFAULT_DOSSIER_PALETTE_ID 
+} from '../utils/dossierPalettes';
 import { GanttModule } from './gantt/GanttModule';
-import { createDefaultGanttPlanForQuotation } from '../data/ganttTemplates';
+import { createDefaultGanttPlanForQuotation, translateGanttPlanToSpanish } from '../data/ganttTemplates';
+import { localizeGanttPlan, getLocalizedDossierPresets } from '../utils/dossierTranslations';
 import { syncSolpedsForQuotation, alignQuotationResourceSolpeds } from '../services/procurementService';
 import { 
   SAP_CATALOG_MODULES, 
@@ -122,6 +133,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   const [validUntil, setValidUntil] = useState(initialQuote?.validUntil || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
   const [currency, setCurrency] = useState<'USD' | 'EUR' | 'CLP' | 'MXN' | 'COP' | 'UF'>(initialQuote?.currency || 'USD');
   const [currencySymbol, setCurrencySymbol] = useState(initialQuote?.currencySymbol || '$');
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(isEditing);
 
   // Client info (SII & Branding)
   const [companyName, setCompanyName] = useState(initialQuote?.client.companyName || initialClient?.companyName || '');
@@ -206,6 +218,20 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   const [coverTheme, setCoverTheme] = useState<'alpine' | 'corporate' | 'datacenter'>(
     initialQuote?.coverTheme || 'alpine'
   );
+  const [colorPalette, setColorPalette] = useState<DossierColorPaletteId>(
+    initialQuote?.colorPalette || DEFAULT_DOSSIER_PALETTE_ID
+  );
+  const activePalette = getDossierPalette(colorPalette);
+  const [documentLanguage, setDocumentLanguage] = useState<DocumentLanguage>(
+    initialQuote?.documentLanguage || 'es'
+  );
+
+  const handleDocumentLanguageChange = (newLang: DocumentLanguage) => {
+    setDocumentLanguage(newLang);
+    if (ganttPlan) {
+      setGanttPlan(localizeGanttPlan(ganttPlan, newLang));
+    }
+  };
 
 
   // =======================================================
@@ -335,13 +361,14 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   );
 
   // Gantt Plan & Step 4 View Mode
-  const [ganttPlan, setGanttPlan] = useState<ProjectPlan>(
-    initialQuote?.ganttPlan || createDefaultGanttPlanForQuotation(
+  const [ganttPlan, setGanttPlan] = useState<ProjectPlan>(() => {
+    const rawPlan = initialQuote?.ganttPlan || createDefaultGanttPlanForQuotation(
       initialQuote?.project?.projectTitle || 'Implementación SAP S/4HANA',
       initialQuote?.project?.estimatedStartDate || new Date().toISOString().slice(0, 10),
       initialQuote?.client?.country || 'Chile'
-    )
-  );
+    );
+    return translateGanttPlanToSpanish(rawPlan);
+  });
   const [milestoneSubTab, setMilestoneSubTab] = useState<'milestones' | 'gantt'>('milestones');
 
   // Financials
@@ -495,6 +522,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
   // Professionals Catalog State
   const catalogProfessionals: Professional[] = propProfessionals || getStoredProfessionals();
   const [isPickerModalOpen, setIsPickerModalOpen] = useState(false);
+  const [isRosterCollapsed, setIsRosterCollapsed] = useState(true);
 
   const handleApplyBenchmarkRatesForCurrency = () => {
     setResources(prev => rescueResourceRatesForCurrency(prev, currency, undefined, catalogProfessionals));
@@ -890,7 +918,9 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
       clientSigner,
       confidentialityMonths: Number(confidentialityMonths) || 6,
       validityDays: Number(validityDays) || 30,
-      coverTheme
+      coverTheme,
+      colorPalette,
+      documentLanguage
     };
 
     // Sincronizar SOLPEDs de Servicio para recursos externos (ME51N)
@@ -967,93 +997,166 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
           {/* STEP 1: GENERAL DATA & CLIENT */}
           {activeStep === 1 && (
             <div className="space-y-6 animate-in fade-in duration-150">
-              {/* Proposal Header Meta */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-3 flex items-center gap-1.5">
-                  <FileText className="w-4 h-4 text-blue-600" />
-                  Identificación de la Cotización
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Código Cotización</label>
-                    <input
-                      type="text"
-                      value={code}
-                      onChange={e => setCode(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
-                  </div>
+              {/* Proposal Header Meta (Collapsible SAP-style Bar) */}
+              {isHeaderCollapsed ? (
+                <div className="bg-slate-50 hover:bg-slate-100/90 border border-slate-200 rounded-xl px-4 py-2.5 flex items-center justify-between transition-colors shadow-2xs">
+                  <div className="flex items-center gap-3 flex-wrap text-xs min-w-0">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                      <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span className="font-mono text-xs bg-white px-2 py-0.5 rounded-md border border-slate-200 text-blue-900 font-semibold shadow-2xs">
+                        {code}
+                      </span>
+                      <span className="text-[11px] text-slate-500 font-medium">v{version}</span>
+                    </div>
 
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Versión</label>
-                    <input
-                      type="text"
-                      value={version}
-                      onChange={e => setVersion(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
-                  </div>
+                    <span className="text-slate-300 hidden sm:inline">|</span>
 
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Fecha Emisión</label>
-                    <input
-                      type="date"
-                      value={createdAt}
-                      onChange={e => setCreatedAt(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
-                  </div>
+                    <div className="hidden sm:flex items-center gap-2 text-slate-600 text-[11px]">
+                      <span className="text-slate-400">Emisión:</span>
+                      <span className="font-medium text-slate-700">{createdAt}</span>
+                      <span className="text-slate-300">•</span>
+                      <span className="text-slate-400">Validez:</span>
+                      <span className="font-medium text-slate-700">{validUntil}</span>
+                    </div>
 
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Validez Oferta</label>
-                    <input
-                      type="date"
-                      value={validUntil}
-                      onChange={e => setValidUntil(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
-                  </div>
+                    <span className="text-slate-300 hidden md:inline">|</span>
 
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Moneda de Cotización</label>
-                    <select
-                      value={currency}
-                      onChange={e => handleCurrencyChange(e.target.value as any)}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    >
-                      <option value="CLP">🇨🇱 CLP ($ - Pesos Chilenos) [Chile]</option>
-                      <option value="UF">🇨🇱 UF (Unidad de Fomento - Banco Central de Chile) [Chile]</option>
-                      <option value="MXN">🇲🇽 MXN ($ - Pesos Mexicanos) [México]</option>
-                      <option value="USD">🇺🇸 USD ($ - Dólares) [Uruguay, Brasil, Colombia]</option>
-                      <option value="EUR">🇪🇺 EUR (€ - Euros)</option>
-                      <option value="COP">🇨🇴 COP ($ - Pesos Colombianos)</option>
-                    </select>
-                  </div>
-                </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-400 text-[11px] hidden md:inline">Idioma:</span>
+                      <span className="font-bold text-slate-800 text-[11px] bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
+                        {documentLanguage === 'en' ? '🇺🇸 EN' : documentLanguage === 'pt' ? '🇧🇷 PT' : '🇪🇸 ES'}
+                      </span>
+                    </div>
 
-                {/* Banner Oficial Banco Central de Chile cuando se selecciona UF */}
-                {currency === 'UF' && (
-                  <div className="mt-3 p-3 bg-blue-50/80 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-start gap-2.5">
-                    <Building2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap font-bold">
-                        <span>Banco Central de Chile:</span>
-                        <span className="font-mono text-blue-800 bg-white px-2 py-0.5 rounded border border-blue-200">
+                    <span className="text-slate-300 hidden md:inline">|</span>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-400 text-[11px] hidden md:inline">Moneda:</span>
+                      <span className="font-bold text-slate-800 font-mono text-[11px] bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
+                        {currency}
+                      </span>
+                      {currency === 'UF' && (
+                        <span className="text-[10px] font-mono font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                           1 UF = ${formatUfValue(getCachedBancoCentralData().indicators.uf.value)} CLP
                         </span>
-                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-semibold">
-                          Indicador Oficial BCCh
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-blue-800/90 leading-relaxed">
-                        Tarifas estándar SAP configuradas en UF (ej. Senior: ~2,20 UF/hr). La facturación se liquida en Pesos Chilenos (CLP) según el valor oficial de la UF a la fecha de emisión de cada factura.
-                      </p>
+                      )}
                     </div>
                   </div>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={() => setIsHeaderCollapsed(false)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-900 bg-white hover:bg-blue-50 px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs transition-all cursor-pointer shrink-0 ml-3"
+                    title="Expandir parámetros de la cotización"
+                  >
+                    <span>Editar Parámetros</span>
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5 shadow-2xs animate-in fade-in duration-100">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-blue-600" />
+                      Identificación de la Cotización
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setIsHeaderCollapsed(true)}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs transition-colors cursor-pointer"
+                      title="Colapsar cabecera a una sola línea para dar prioridad al cliente"
+                    >
+                      <span>Colapsar cabecera</span>
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* 6-Column High-Density Single Row Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-xs">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Código Cotización</label>
+                      <input
+                        type="text"
+                        value={code}
+                        onChange={e => setCode(e.target.value)}
+                        required
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 hover:border-slate-400 rounded-lg text-slate-900 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Versión</label>
+                      <input
+                        type="text"
+                        value={version}
+                        onChange={e => setVersion(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 hover:border-slate-400 rounded-lg text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Fecha Emisión</label>
+                      <input
+                        type="date"
+                        value={createdAt}
+                        onChange={e => setCreatedAt(e.target.value)}
+                        required
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 hover:border-slate-400 rounded-lg text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Validez Oferta</label>
+                      <input
+                        type="date"
+                        value={validUntil}
+                        onChange={e => setValidUntil(e.target.value)}
+                        required
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 hover:border-slate-400 rounded-lg text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Idioma Documento</label>
+                      <select
+                        value={documentLanguage}
+                        onChange={e => handleDocumentLanguageChange(e.target.value as DocumentLanguage)}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 hover:border-slate-400 rounded-lg text-slate-900 font-bold text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-colors"
+                      >
+                        <option value="es">🇪🇸 Español</option>
+                        <option value="en">🇺🇸 English</option>
+                        <option value="pt">🇧🇷 Português</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Moneda de Cotización</label>
+                      <select
+                        value={currency}
+                        onChange={e => handleCurrencyChange(e.target.value as any)}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 hover:border-slate-400 rounded-lg text-slate-900 font-bold text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-colors"
+                      >
+                        <option value="CLP">🇨🇱 CLP ($ - Pesos Chilenos) [Chile]</option>
+                        <option value="UF">🇨🇱 UF (Unidad de Fomento - BCCh) [Chile]</option>
+                        <option value="MXN">🇲🇽 MXN ($ - Pesos Mexicanos) [México]</option>
+                        <option value="USD">🇺🇸 USD ($ - Dólares) [Uruguay, Brasil, Colombia]</option>
+                        <option value="EUR">🇪🇺 EUR (€ - Euros)</option>
+                        <option value="COP">🇨🇴 COP ($ - Pesos Colombianos)</option>
+                      </select>
+                      {currency === 'UF' && (
+                        <div className="mt-1 flex items-center gap-1 text-[10px] text-blue-800">
+                          <span className="font-mono bg-blue-100 text-blue-900 px-1 py-0.2 rounded font-bold">
+                            1 UF = ${formatUfValue(getCachedBancoCentralData().indicators.uf.value)}
+                          </span>
+                          <span className="text-[9px] text-emerald-700 font-semibold truncate" title="Indicador Oficial Banco Central de Chile">
+                            ● BCCh Oficial
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
                 {/* Currency Feedback Notification */}
                 {currencyFeedbackNotice && (
@@ -1099,7 +1202,6 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                     </div>
                   </div>
                 )}
-              </div>
 
               {/* Client Info (Maestro de Clientes & SII) */}
               <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-4 shadow-xs">
@@ -1200,15 +1302,16 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                 {/* Main Client Data & Logo Form */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                   {/* Left Column: Logo & Branding */}
-                  <div className="space-y-3">
-                    <label className="block text-xs font-semibold text-slate-700">
-                      Logo del Cliente (para la propuesta)
-                    </label>
+                  <div className="space-y-2">
                     <LogoUploader
+                      currentLogo={clientLogoUrl}
+                      onLogoChange={setClientLogoUrl}
                       value={clientLogoUrl}
                       onChange={setClientLogoUrl}
-                      placeholderText="Subir logo corporativo del cliente"
-                      helperText="Aparecerá en portada y pie de propuesta. PNG o SVG con fondo transparente recomendado."
+                      label="Logo del Cliente"
+                      description="Aparecerá en portada y pie de propuesta. PNG o SVG con fondo transparente recomendado."
+                      recommendedSize="Recomendado: 400x160 px o superior (máx. 5MB)"
+                      previewBg="light"
                     />
                   </div>
 
@@ -2122,89 +2225,149 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
             <div className="space-y-6 animate-in fade-in duration-150">
               
               {/* ========================================================================= */}
-              {/* CATÁLOGO DE PROFESIONALES Y TARIFAS OFICIALES PRECARGADAS */}
+              {/* CATÁLOGO DE PROFESIONALES Y TARIFAS OFICIALES PRECARGADAS (COLAPSABLE) */}
               {/* ========================================================================= */}
-              <div className="bg-gradient-to-r from-slate-900 to-blue-950 p-5 rounded-2xl text-white shadow-md space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                        Nómina Oficial & Tarifario Preestablecido
-                      </span>
-                      <span className="text-[10px] font-mono text-slate-300">
-                        Tarifas en <strong>{currency}</strong>
-                      </span>
+              {isRosterCollapsed ? (
+                <div className="bg-slate-900 text-white px-4 py-3 rounded-xl border border-slate-800 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+                      <Users className="w-4 h-4" />
                     </div>
-                    <h3 className="text-sm font-bold text-white mt-1 flex items-center gap-2">
-                      <Users className="w-4 h-4 text-blue-400" />
-                      Catálogo de Consultores y Especialistas SAP
-                    </h3>
-                    <p className="text-xs text-slate-300 mt-0.5">
-                      Incorpore directamente a los profesionales con su tarifa horaria precalculada en {currency}, sin necesidad de estimar o calcular valores manualmente.
-                    </p>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold text-white">
+                          Nómina Oficial & Tarifario de Consultores SAP
+                        </span>
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/20">
+                          {catalogProfessionals.length} profesionales
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono hidden md:inline">
+                          Tarifas en <strong>{currency}</strong>
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Catálogo de consultores con tarifa horaria precalculada. Presione para ver la nómina completa o expandir atajos.
+                      </p>
+                    </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setIsPickerModalOpen(true)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center gap-2 cursor-pointer shrink-0 self-start sm:self-auto"
-                  >
-                    <Users className="w-4 h-4" />
-                    <span>Ver Catálogo Completo ({catalogProfessionals.length})</span>
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    <button
+                      type="button"
+                      onClick={() => setIsPickerModalOpen(true)}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                      title="Abrir catálogo completo de profesionales SAP"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      <span>Ver Catálogo Completo ({catalogProfessionals.length})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsRosterCollapsed(false)}
+                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-medium border border-slate-700 transition-colors flex items-center gap-1 cursor-pointer"
+                      title="Desplegar vista previa de consultores"
+                    >
+                      <span>Expandir</span>
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
+              ) : (
+                <div className="bg-gradient-to-r from-slate-900 to-blue-950 p-5 rounded-2xl text-white shadow-md space-y-4 animate-in fade-in duration-100">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                          Nómina Oficial & Tarifario Preestablecido
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-300">
+                          Tarifas en <strong>{currency}</strong>
+                        </span>
+                      </div>
+                      <h3 className="text-sm font-bold text-white mt-1 flex items-center gap-2">
+                        <Users className="w-4 h-4 text-blue-400" />
+                        Catálogo de Consultores y Especialistas SAP
+                      </h3>
+                      <p className="text-xs text-slate-300 mt-0.5">
+                        Incorpore directamente a los profesionales con su tarifa horaria precalculada en {currency}, sin necesidad de estimar o calcular valores manualmente.
+                      </p>
+                    </div>
 
-                {/* Quick Roster Carousel / Grid */}
-                <div className="pt-2 border-t border-slate-800">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
-                    Incorporación Rápida con 1 Clic (Tarifa Oficial {currency}):
-                  </span>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
-                    {catalogProfessionals.slice(0, 8).map(prof => {
-                      const rate = getProfessionalRate(prof, currency);
-                      const isAdded = resources.some(r => r.professionalId === prof.id);
+                    <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => setIsPickerModalOpen(true)}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                      >
+                        <Users className="w-4 h-4" />
+                        <span>Ver Catálogo Completo ({catalogProfessionals.length})</span>
+                      </button>
 
-                      return (
-                        <div
-                          key={prof.id}
-                          className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between ${
-                            isAdded
-                              ? 'bg-blue-900/40 border-blue-500/50'
-                              : 'bg-slate-800/80 border-slate-700/80 hover:bg-slate-800 hover:border-blue-400'
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-1 text-[9px] mb-1">
-                              <span className="font-mono font-bold text-blue-300">{prof.code}</span>
-                              <span className="text-slate-400 truncate">{prof.seniority}</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsRosterCollapsed(true)}
+                        className="px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold border border-slate-700 transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Colapsar nómina para dar prioridad a las posiciones"
+                      >
+                        <span>Colapsar</span>
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Quick Roster Carousel / Grid */}
+                  <div className="pt-2 border-t border-slate-800">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                      Incorporación Rápida con 1 Clic (Tarifa Oficial {currency}):
+                    </span>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                      {catalogProfessionals.slice(0, 8).map(prof => {
+                        const rate = getProfessionalRate(prof, currency);
+                        const isAdded = resources.some(r => r.professionalId === prof.id);
+
+                        return (
+                          <div
+                            key={prof.id}
+                            className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between ${
+                              isAdded
+                                ? 'bg-blue-900/40 border-blue-500/50'
+                                : 'bg-slate-800/80 border-slate-700/80 hover:bg-slate-800 hover:border-blue-400'
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-center justify-between gap-1 text-[9px] mb-1">
+                                <span className="font-mono font-bold text-blue-300">{prof.code}</span>
+                                <span className="text-slate-400 truncate">{prof.seniority}</span>
+                              </div>
+                              <div className="font-bold text-xs text-white truncate">{prof.name}</div>
+                              <div className="text-[10px] text-slate-300 truncate">{prof.roleTitle.split('&')[0]}</div>
                             </div>
-                            <div className="font-bold text-xs text-white truncate">{prof.name}</div>
-                            <div className="text-[10px] text-slate-300 truncate">{prof.roleTitle.split('&')[0]}</div>
-                          </div>
 
-                          <div className="mt-2 pt-2 border-t border-slate-700/60 flex items-center justify-between">
-                            <span className="font-mono font-bold text-xs text-emerald-400">
-                              {formatCurrency(rate, currency, currencySymbol)}/hr
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleAddProfessionalFromCatalog(prof)}
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                                isAdded
-                                  ? 'bg-blue-500/30 text-blue-200 hover:bg-blue-500/50'
-                                  : 'bg-blue-600 hover:bg-blue-500 text-white'
-                              }`}
-                            >
-                              <Plus className="w-3 h-3" />
-                              <span>{isAdded ? 'Agregar +' : 'Añadir'}</span>
-                            </button>
+                            <div className="mt-2 pt-2 border-t border-slate-700/60 flex items-center justify-between">
+                              <span className="font-mono font-bold text-xs text-emerald-400">
+                                {formatCurrency(rate, currency, currencySymbol)}/hr
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleAddProfessionalFromCatalog(prof)}
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                                  isAdded
+                                    ? 'bg-blue-500/30 text-blue-200 hover:bg-blue-500/50'
+                                    : 'bg-blue-600 hover:bg-blue-500 text-white'
+                                }`}
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>{isAdded ? 'Agregar +' : 'Añadir'}</span>
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Quick Catalog Adder: Standard SAP Modules */}
               <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl">
@@ -2960,73 +3123,247 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({
                 </button>
               </div>
 
-              {/* 1. Selector Visual de Portada */}
-              <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-blue-600" />
-                    1. Fotografía y Tema Visual de Portada & Contraportada
-                  </h3>
-                  <span className="text-[11px] text-slate-500">
-                    Define la estética cinemática del documento
-                  </span>
-                </div>
+              {/* 1. Selector Visual de Portada, Idioma & Paleta Cromática */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-6">
+                
+                {/* 1.0 Idioma de la Propuesta / Dossier */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <Globe2 className="w-4 h-4 text-emerald-600" />
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                        1. Idioma Oficial del Dossier & Cotización
+                      </h3>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
+                        Multilingüe (ES / EN / PT)
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500">
+                      Adapta la portada, tablas, fases de la carta Gantt y notas legales
+                    </span>
+                  </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {[
-                    {
-                      id: 'alpine',
-                      title: 'Lago Alpino & Naturaleza',
-                      desc: 'Estilo clásico Bridev (sereno, elegante y reflexivo).',
-                      img: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=600&q=80'
-                    },
-                    {
-                      id: 'corporate',
-                      title: 'Arquitectura Corporativa',
-                      desc: 'Edificios modernos y rascacielos de alta gama.',
-                      img: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80'
-                    },
-                    {
-                      id: 'datacenter',
-                      title: 'Data Center & Alta Tecnología',
-                      desc: 'Infraestructura de servidores, redes y cloud computing.',
-                      img: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80'
-                    }
-                  ].map(t => {
-                    const isSelected = coverTheme === t.id;
-                    return (
-                      <div
-                        key={t.id}
-                        onClick={() => setCoverTheme(t.id as any)}
-                        className={`relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer group ${
-                          isSelected
-                            ? 'border-blue-600 shadow-md ring-2 ring-blue-500/20'
-                            : 'border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {[
+                      {
+                        id: 'es',
+                        label: 'Español (Chile & LATAM)',
+                        flag: '🇪🇸',
+                        desc: 'Propuesta estándar con terminología comercial en español.'
+                      },
+                      {
+                        id: 'en',
+                        label: 'English (Global & US)',
+                        flag: '🇺🇸',
+                        desc: 'International executive proposal for global enterprise clients.'
+                      },
+                      {
+                        id: 'pt',
+                        label: 'Português (Brasil & Mercosul)',
+                        flag: '🇧🇷',
+                        desc: 'Proposta executiva adaptada para o mercado corporativo brasileiro.'
+                      }
+                    ].map(lang => {
+                      const isSelected = documentLanguage === lang.id;
+                      return (
                         <div
-                          className="h-24 bg-cover bg-center"
-                          style={{ backgroundImage: `url("${t.img}")` }}
+                          key={lang.id}
+                          onClick={() => handleDocumentLanguageChange(lang.id as DocumentLanguage)}
+                          className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between text-left ${
+                            isSelected
+                              ? 'border-emerald-600 bg-emerald-50/30 shadow-md ring-2 ring-emerald-500/20'
+                              : 'border-slate-200 bg-white hover:border-slate-300'
+                          }`}
                         >
-                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-900/30 to-transparent" />
-                          <div className="absolute top-2 right-2">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xl leading-none">{lang.flag}</span>
+                              <span className="text-xs font-bold text-slate-900">{lang.label}</span>
+                            </div>
                             {isSelected ? (
-                              <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shadow-sm">
-                                <Check className="w-3.5 h-3.5" />
+                              <div className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold shadow-xs">
+                                <Check className="w-3 h-3" />
                               </div>
                             ) : (
-                              <div className="w-5 h-5 rounded-full bg-slate-900/60 border border-white/40" />
+                              <div className="w-4 h-4 rounded-full border border-slate-300" />
                             )}
                           </div>
+                          <p className="text-[11px] text-slate-500 leading-snug">
+                            {lang.desc}
+                          </p>
                         </div>
-                        <div className="p-3 bg-white">
-                          <p className="text-xs font-bold text-slate-900">{t.title}</p>
-                          <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{t.desc}</p>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
+
+                {/* 1.A Fotografía de Portada */}
+                <div className="space-y-3 pt-4 border-t border-slate-100">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-blue-600" />
+                      2. Fotografía y Tema Visual de Portada & Contraportada
+                    </h3>
+                    <span className="text-[11px] text-slate-500">
+                      Define la estética cinemática del documento
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {[
+                      {
+                        id: 'alpine',
+                        title: 'Lago Alpino & Naturaleza',
+                        desc: 'Estilo clásico Bridev (sereno, elegante y reflexivo).',
+                        img: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=600&q=80'
+                      },
+                      {
+                        id: 'corporate',
+                        title: 'Arquitectura Corporativa',
+                        desc: 'Edificios modernos y rascacielos de alta gama.',
+                        img: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80'
+                      },
+                      {
+                        id: 'datacenter',
+                        title: 'Data Center & Alta Tecnología',
+                        desc: 'Infraestructura de servidores, redes y cloud computing.',
+                        img: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80'
+                      }
+                    ].map(t => {
+                      const isSelected = coverTheme === t.id;
+                      return (
+                        <div
+                          key={t.id}
+                          onClick={() => setCoverTheme(t.id as any)}
+                          className={`relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer group ${
+                            isSelected
+                              ? 'border-blue-600 shadow-md ring-2 ring-blue-500/20'
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <div
+                            className="h-28 bg-cover bg-center transition-all duration-300 relative"
+                            style={{ 
+                              backgroundImage: `url("${t.img}")`,
+                              filter: activePalette.imageFilter
+                            }}
+                          >
+                            <div 
+                              className="absolute inset-0 transition-opacity duration-300" 
+                              style={{ background: activePalette.imageOverlay }} 
+                            />
+                            <div className="absolute top-2 right-2 z-10">
+                              {isSelected ? (
+                                <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shadow-sm">
+                                  <Check className="w-3.5 h-3.5" />
+                                </div>
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-slate-900/60 border border-white/40" />
+                              )}
+                            </div>
+                            <div className="absolute bottom-2 left-2 z-10">
+                              <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded bg-black/70 text-white/95 backdrop-blur-xs border border-white/10 shadow-xs">
+                                Tono: {activePalette.name}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="p-3 bg-white">
+                            <p className="text-xs font-bold text-slate-900">{t.title}</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{t.desc}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 1.B Paleta Cromática para el Dossier & PDF */}
+                <div className="pt-4 border-t border-slate-100 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <Palette className="w-4 h-4 text-blue-600" />
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                        Paleta de Colores & Tonalidad del Dossier PDF
+                      </h4>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200">
+                        4 Paletas Profesionales
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500">
+                      Incide en el tono aplicado a las imágenes, fondos, acentos y tablas del PDF
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {Object.values(DOSSIER_COLOR_PALETTES).map(palette => {
+                      const isSelected = colorPalette === palette.id;
+                      return (
+                        <div
+                          key={palette.id}
+                          onClick={() => setColorPalette(palette.id)}
+                          className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between text-left relative ${
+                            isSelected
+                              ? 'border-blue-600 bg-blue-50/25 shadow-md ring-2 ring-blue-500/20'
+                              : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs'
+                          }`}
+                        >
+                          <div>
+                            {/* Header: Title & Check */}
+                            <div className="flex items-start justify-between gap-1.5 mb-2">
+                              <div>
+                                <span className="text-xs font-bold text-slate-900 block leading-tight">
+                                  {palette.name}
+                                </span>
+                                <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                                  {palette.tagline}
+                                </span>
+                              </div>
+                              <div className="shrink-0 mt-0.5">
+                                {isSelected ? (
+                                  <div className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold shadow-xs">
+                                    <Check className="w-3 h-3" />
+                                  </div>
+                                ) : (
+                                  <div className="w-4 h-4 rounded-full border border-slate-300" />
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Color Swatches Bar */}
+                            <div className="h-5 w-full rounded-md overflow-hidden flex my-2 border border-slate-200 shadow-2xs">
+                              <div className="h-full flex-1" style={{ backgroundColor: palette.colors.primary }} title={`Principal: ${palette.colors.primary}`} />
+                              <div className="h-full flex-1" style={{ backgroundColor: palette.colors.accent }} title={`Acento: ${palette.colors.accent}`} />
+                              <div className="h-full flex-1" style={{ backgroundColor: palette.colors.success }} title={`Éxito / Estado: ${palette.colors.success}`} />
+                              <div className="h-full flex-1" style={{ backgroundColor: palette.colors.surface }} title={`Fondo / Pastel: ${palette.colors.surface}`} />
+                            </div>
+
+                            {/* Hex codes labels */}
+                            <div className="grid grid-cols-4 gap-0.5 text-[9px] font-mono text-slate-500 mb-2 text-center">
+                              <span className="truncate">{palette.colors.primary}</span>
+                              <span className="truncate">{palette.colors.accent}</span>
+                              <span className="truncate">{palette.colors.success}</span>
+                              <span className="truncate">{palette.colors.surface}</span>
+                            </div>
+
+                            {/* Description */}
+                            <p className="text-[11px] text-slate-600 leading-snug">
+                              {palette.description}
+                            </p>
+                          </div>
+
+                          {/* Tone indicator footer */}
+                          <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                            <span className="text-slate-400 font-medium">Efecto en imagen:</span>
+                            <span className="font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                              {palette.isDark ? 'Contraste Noche' : (palette.id === 'eco-cool-chain' ? 'Fresco Glaciar' : (palette.id === 'minimal-industrial' ? 'Pastel Desaturado' : 'Corporativo Azul'))}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
               </div>
 
               {/* 2. Contraste Clave: "Hoy" vs "Queda Construido" */}

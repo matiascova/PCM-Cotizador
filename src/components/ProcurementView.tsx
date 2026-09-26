@@ -198,7 +198,7 @@ export const FloatingMatchcodePortal: React.FC<FloatingMatchcodePortalProps> = (
   children
 }) => {
   const popoverRef = useRef<HTMLDivElement>(null);
-  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -222,18 +222,32 @@ export const FloatingMatchcodePortal: React.FC<FloatingMatchcodePortalProps> = (
       }
 
       // Vertical: place below trigger if room, else place above
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      const estimatedHeight = 350;
+      const spaceBelow = window.innerHeight - (rect.bottom + 4) - 16;
+      const spaceAbove = rect.top - 16;
 
       let top: number;
+      let maxHeight: number;
+
       if (spaceBelow < 260 && spaceAbove > spaceBelow) {
-        top = Math.max(16, rect.top - estimatedHeight - 4);
+        maxHeight = Math.max(180, Math.min(420, spaceAbove));
+        top = Math.max(16, rect.top - maxHeight - 4);
       } else {
         top = rect.bottom + 4;
+        maxHeight = Math.max(180, Math.min(420, spaceBelow));
       }
 
-      setCoords({ top, left, width: popWidth });
+      setCoords(prev => {
+        if (
+          prev &&
+          prev.top === top &&
+          prev.left === left &&
+          prev.width === popWidth &&
+          prev.maxHeight === maxHeight
+        ) {
+          return prev;
+        }
+        return { top, left, width: popWidth, maxHeight };
+      });
     };
 
     updatePosition();
@@ -293,7 +307,10 @@ export const FloatingMatchcodePortal: React.FC<FloatingMatchcodePortalProps> = (
         top: `${coords.top}px`,
         left: `${coords.left}px`,
         width: `${coords.width}px`,
+        maxHeight: `${coords.maxHeight}px`,
         zIndex: 99999,
+        display: 'flex',
+        flexDirection: 'column'
       }}
       className="bg-white rounded-xl shadow-2xl border border-slate-300 overflow-hidden animate-in fade-in zoom-in-95 duration-100 ring-1 ring-black/10 text-xs"
     >
@@ -419,29 +436,7 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
 
   const supplierMatchcodeRef = useRef<HTMLDivElement>(null);
   const clientMatchcodeRef = useRef<HTMLDivElement>(null);
-  const positionMatchcodeRef = useRef<HTMLDivElement>(null);
   const me52nProfileMatchcodeRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (supplierMatchcodeRef.current && !supplierMatchcodeRef.current.contains(event.target as Node)) {
-        setShowSupplierMatchcode(false);
-      }
-      if (clientMatchcodeRef.current && !clientMatchcodeRef.current.contains(event.target as Node)) {
-        setShowClientMatchcode(false);
-      }
-      if (positionMatchcodeRef.current && !positionMatchcodeRef.current.contains(event.target as Node)) {
-        setOpenPositionMatchcodeIdx(null);
-      }
-      if (me52nProfileMatchcodeRef.current && !me52nProfileMatchcodeRef.current.contains(event.target as Node)) {
-        setShowMe52nProfileMatchcode(false);
-      }
-    };
-    if (showSupplierMatchcode || showClientMatchcode || openPositionMatchcodeIdx !== null || showMe52nProfileMatchcode) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showSupplierMatchcode, showClientMatchcode, openPositionMatchcodeIdx, showMe52nProfileMatchcode]);
 
   // Posiciones de la nueva SOLPED
   const [newSolpedPositions, setNewSolpedPositions] = useState<CreateSolpedPositionItem[]>([]);

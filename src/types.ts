@@ -231,6 +231,21 @@ export interface RecruitmentServiceConfig {
   totalUF: number;
 }
 
+export type DocumentLanguage = 'es' | 'en' | 'pt';
+
+export interface LanguageOption {
+  code: DocumentLanguage;
+  name: string;
+  nativeName: string;
+  flag: string;
+}
+
+export const SUPPORTED_LANGUAGES: LanguageOption[] = [
+  { code: 'es', name: 'Español', nativeName: 'Español', flag: '🇪🇸' },
+  { code: 'en', name: 'Inglés', nativeName: 'English', flag: '🇺🇸' },
+  { code: 'pt', name: 'Portugués', nativeName: 'Português', flag: '🇧🇷' }
+];
+
 export interface Quotation {
   id: string;
   code: string; // e.g. "COT-SAP-2026-004"
@@ -279,14 +294,22 @@ export interface Quotation {
   confidentialityMonths?: number;
   validityDays?: number;
   coverTheme?: 'alpine' | 'corporate' | 'datacenter';
+  colorPalette?: DossierColorPaletteId;
+  documentLanguage?: DocumentLanguage;
 }
+
+export type DossierColorPaletteId = 
+  | 'enterprise-logistics' 
+  | 'eco-cool-chain' 
+  | 'minimal-industrial' 
+  | 'deep-ocean-neon';
 
 export interface RiskMitigationItem {
   id: string;
   risk: string;
   impact: string;
   mitigation: string;
-  owner: 'Cliente' | 'Consultora' | 'Ambos';
+  owner: 'Cliente' | 'Consultora' | 'Ambos' | 'Client' | 'Consulting Firm' | 'Both Parties' | 'Consultoria' | 'Ambas as Partes' | string;
 }
 
 export interface OutOfScopeCategoryItem {

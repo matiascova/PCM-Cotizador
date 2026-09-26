@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { Quotation, QuotationStatus, SapModuleCode, Professional, ClientMasterItem, CompanyProfile } from './types';
 import { INITIAL_QUOTATIONS } from './data/initialQuotations';
+import { translateGanttPlanToSpanish } from './data/ganttTemplates';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { MetricSummaryBar } from './components/MetricSummaryBar';
@@ -74,6 +75,14 @@ export default function App() {
             updatedQuote = {
               ...updatedQuote,
               resources: rescuedResources
+            };
+          }
+
+          // Ensure Gantt plan phase names are in Spanish
+          if (updatedQuote.ganttPlan) {
+            updatedQuote = {
+              ...updatedQuote,
+              ganttPlan: translateGanttPlanToSpanish(updatedQuote.ganttPlan),
             };
           }
 
