@@ -1,4 +1,4 @@
-import { DocumentLanguage, Quotation } from '../types';
+import { DocumentLanguage, Quotation, ProjectType } from '../types';
 import { 
   getDossierTranslation, 
   localizeGanttPlan, 
@@ -403,7 +403,7 @@ export function localizeQuotation(quote: Quotation, targetLang: DocumentLanguage
       projectTitle: localizedTitle,
       businessObjective: localizedObjective,
       scopeDescription: localizedScope,
-      projectType: localizedProjectType
+      projectType: localizedProjectType as unknown as ProjectType
     },
     paymentTerms: localizedPaymentTerms,
     currentSituationHoy: presets.hoy,

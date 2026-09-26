@@ -7,26 +7,29 @@ import {
   CheckCircle2, 
   Sparkles, 
   Building2, 
-  ShieldCheck,
-  Plus,
-  Compass,
-  X,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Pin,
-  PinOff,
-  ChevronRight,
-  ChevronLeft,
-  Globe2,
-  ShoppingBag,
-  Truck
+  ShieldCheck, 
+  Plus, 
+  Compass, 
+  X, 
+  PanelLeftClose, 
+  PanelLeftOpen, 
+  Pin, 
+  PinOff, 
+  ChevronRight, 
+  ChevronLeft, 
+  Globe2, 
+  ShoppingBag, 
+  Truck,
+  UserCheck,
+  LogOut,
+  Crown
 } from 'lucide-react';
-import { Quotation } from '../types';
+import { Quotation, AppUser, AppNavTab } from '../types';
 import { calculateQuotationTotals, formatCurrency } from '../utils/calculations';
 
 interface SidebarProps {
-  activeNav: 'builder' | 'history' | 'clients' | 'resources' | 'procurement' | 'suppliers';
-  setActiveNav: (nav: 'builder' | 'history' | 'clients' | 'resources' | 'procurement' | 'suppliers') => void;
+  activeNav: AppNavTab;
+  setActiveNav: (nav: AppNavTab) => void;
   quotations: Quotation[];
   onNewQuotation: () => void;
   isOpenMobile?: boolean;
@@ -36,6 +39,9 @@ interface SidebarProps {
   professionalsCount?: number;
   procurementCount?: number;
   suppliersCount?: number;
+  usersCount?: number;
+  currentUser?: AppUser | null;
+  onLogout?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -49,7 +55,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleCollapse,
   professionalsCount,
   procurementCount,
-  suppliersCount
+  suppliersCount,
+  usersCount,
+  currentUser,
+  onLogout
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const hoverTimeoutRef = useRef<number | null>(null);
@@ -72,7 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const handleNavClick = (id: 'builder' | 'history' | 'clients' | 'resources' | 'procurement' | 'suppliers') => {
+  const handleNavClick = (id: AppNavTab) => {
     setActiveNav(id);
     if (isCollapsed) {
       setIsHovered(false);
@@ -83,7 +92,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const navItems: { 
-    id: 'builder' | 'history' | 'clients' | 'resources' | 'procurement' | 'suppliers'; 
+    id: AppNavTab; 
     label: string; 
     icon: React.ReactNode; 
     count?: number 
@@ -123,6 +132,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Maestro Proveedores', 
       icon: <Truck className="w-5 h-5 shrink-0" />,
       count: suppliersCount
+    },
+    { 
+      id: 'users', 
+      label: 'Acceso y Usuarios', 
+      icon: <ShieldCheck className="w-5 h-5 shrink-0" />,
+      count: usersCount
     }
   ];
 
@@ -138,63 +153,57 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {isOpenMobile && (
         <div 
           onClick={onCloseMobile}
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-40 lg:hidden"
+          className="lg:hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-40 transition-opacity"
         />
       )}
 
-      {/* Backdrop for desktop curtain overlay when expanded by hover */}
-      {isCollapsed && isHovered && !isOpenMobile && (
-        <div 
-          onClick={() => setIsHovered(false)}
-          className="hidden lg:block fixed inset-0 bg-slate-900/20 backdrop-blur-[1px] z-30 transition-opacity"
-        />
-      )}
-
-      {/* Outer wrapper to maintain layout flow on desktop */}
+      {/* Desktop Container Wrapper:
+          When collapsed (and not pinned open), reserve a narrow 4rem rail in the document layout,
+          while the actual sidebar expands freely over content on hover.
+      */}
       <div 
-        className={`hidden lg:block shrink-0 transition-all duration-300 ease-in-out relative ${
-          isCollapsed ? 'w-14' : 'w-72'
+        className={`hidden lg:block shrink-0 transition-all duration-300 ease-in-out z-30 ${
+          isCollapsed ? 'w-16' : 'w-64'
         }`}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        {/* The actual Sidebar (Curtain style) */}
         <aside 
           className={`
-            fixed lg:absolute inset-y-0 left-0 z-40
-            bg-[#0F172A] text-white flex flex-col border-r border-slate-700/80 shadow-2xl
-            transition-all duration-300 ease-in-out overflow-hidden
-            ${isFullOpen ? 'w-72' : 'w-14'}
-            ${isOpenMobile ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+            fixed top-0 bottom-0 left-0 bg-[#0F172A] text-white flex flex-col border-r border-slate-800
+            transition-all duration-300 ease-in-out select-none
+            ${isFullOpen ? 'w-64 shadow-2xl shadow-slate-950/60' : 'w-16 shadow-md'}
           `}
         >
-          {/* Brand Header */}
-          <div className="h-16 flex items-center justify-between px-3 border-b border-slate-800 shrink-0">
+          {/* Header Brand Area */}
+          <div className="h-16 flex items-center justify-between px-3.5 border-b border-slate-800/80 shrink-0">
             {isFullOpen ? (
               <>
-                <div className="flex items-center gap-2.5 overflow-hidden">
-                  <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-black text-base italic text-white shadow-md shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 bg-linear-to-tr from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center font-black text-base italic text-white shadow-md shadow-blue-500/30 shrink-0">
                     S
                   </div>
-                  <div className="truncate">
-                    <h1 className="text-base font-bold tracking-tight text-white leading-none">
-                      SAP<span className="font-light text-slate-400 ml-1">Quoter</span>
+                  <div className="min-w-0">
+                    <h1 className="text-base font-bold tracking-tight text-white leading-none truncate">
+                      Twin<span className="font-light text-blue-400 ml-1">Ducks</span>
                     </h1>
-                    <span className="text-[10px] text-slate-400 block font-mono mt-0.5">S/4HANA Consulting</span>
+                    <span className="text-[10px] text-slate-400 block font-mono mt-0.5 truncate">
+                      ERP SAP Suite
+                    </span>
                   </div>
                 </div>
 
+                {/* Desktop Curtain Toggle / Pin Button */}
                 <div className="flex items-center gap-1">
-                  {/* Pin / Unpin button */}
                   <button
                     onClick={onToggleCollapse}
-                    title={isCollapsed ? "Fijar barra abierta (Desactivar cortina)" : "Activar modo cortina (Maximizar pantalla)"}
+                    title={isCollapsed ? "Fijar barra lateral abierta" : "Plegar a modo cortina"}
                     className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
                   >
                     {isCollapsed ? (
-                      <Pin className="w-4 h-4 text-slate-400 hover:text-blue-400" />
+                      <Pin className="w-4 h-4 text-blue-400" />
                     ) : (
-                      <PinOff className="w-4 h-4 text-blue-400" />
+                      <PinOff className="w-4 h-4 text-slate-400" />
                     )}
                   </button>
 
@@ -285,7 +294,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 );
               }
 
-              // Mini Rail collapsed icon item with tooltip
+              // Collapsed Mini Icon with Floating Tooltip
               return (
                 <div key={item.id} className="group relative flex justify-center">
                   <button
@@ -295,6 +304,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         ? 'bg-blue-600 text-white shadow-md shadow-blue-900/40' 
                         : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                     }`}
+                    title={item.label}
                   >
                     {item.icon}
                     {item.count !== undefined && item.count > 0 && (
@@ -319,25 +329,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
             })}
           </nav>
 
-          {/* Bottom Area */}
+          {/* Bottom Area - Current User & Logout */}
           <div className="p-2 border-t border-slate-800 shrink-0">
             {isFullOpen ? (
               <div className="space-y-2">
-                {/* Regional Operations Badge */}
-                <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/80 text-[11px]">
-                  <div className="flex items-center justify-between text-[9px] uppercase tracking-widest text-slate-400 font-bold mb-1">
-                    <span>Operaciones LatAm</span>
-                    <span className="text-emerald-400 font-mono">SCL • HQ</span>
+                {currentUser && (
+                  <div className="p-2.5 bg-slate-800/90 rounded-xl border border-slate-700/80 text-[11px] flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <img
+                        src={currentUser.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=2563eb&color=fff&bold=true`}
+                        alt={currentUser.name}
+                        className="w-8 h-8 rounded-lg object-cover border border-slate-700 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-200 truncate flex items-center gap-1">
+                          <span>{currentUser.name}</span>
+                        </div>
+                        <div className="text-[10px] text-blue-400 font-medium capitalize truncate">
+                          {currentUser.role === 'administrador' ? '👑 Administrador' : currentUser.role === 'supervisor' ? '🛡️ Supervisor' : '👤 Usuario'}
+                        </div>
+                      </div>
+                    </div>
+                    {onLogout && (
+                      <button
+                        type="button"
+                        onClick={onLogout}
+                        className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-700/60 rounded-lg transition-colors cursor-pointer"
+                        title="Cerrar sesión"
+                      >
+                        <LogOut className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
-                  <p className="text-slate-300 font-medium truncate">
-                    Chile <span className="text-slate-500">→</span> UY, BR, MX, CO
-                  </p>
-                  <div className="flex items-center gap-1 mt-1.5 text-[9px] font-mono text-slate-400">
-                    <span className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-200">🇨🇱 CLP</span>
-                    <span className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-200">🇲🇽 MXN</span>
-                    <span className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-200">🇺🇸 USD</span>
-                  </div>
-                </div>
+                )}
 
                 {/* Curtain control hint */}
                 <div className="flex items-center justify-between px-1 text-[10px] text-slate-400">
@@ -353,11 +377,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               </div>
             ) : (
-              /* Mini bottom toggle button */
+              /* Mini bottom user icon */
               <div className="flex flex-col items-center gap-2">
-                <div className="text-[11px] select-none text-slate-500" title="HQ Santiago de Chile">
-                  🇨🇱
-                </div>
+                {currentUser && (
+                  <div className="group relative flex justify-center">
+                    <button
+                      onClick={() => handleNavClick('users')}
+                      className="w-9 h-9 rounded-xl overflow-hidden border border-slate-700 hover:border-blue-500 transition-all cursor-pointer"
+                      title={currentUser.name}
+                    >
+                      <img
+                        src={currentUser.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=2563eb&color=fff&bold=true`}
+                        alt={currentUser.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </button>
+                    <div className="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 text-white text-xs rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-slate-700 font-semibold">
+                      {currentUser.name} ({currentUser.role})
+                    </div>
+                  </div>
+                )}
                 <div className="group relative flex justify-center">
                   <button
                     onClick={onToggleCollapse}
@@ -366,9 +405,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   >
                     <ChevronRight className="w-5 h-5" />
                   </button>
-                  <div className="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 text-white text-xs rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none border border-slate-700 font-semibold">
-                    Expandir barra lateral
-                  </div>
                 </div>
               </div>
             )}
@@ -393,9 +429,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             <div>
               <h1 className="text-base font-bold tracking-tight text-white leading-none">
-                SAP<span className="font-light text-slate-400 ml-1">Quoter</span>
+                Twin<span className="font-light text-blue-400 ml-1">Ducks</span>
               </h1>
-              <span className="text-[10px] text-slate-400 block font-mono mt-0.5">S/4HANA Consulting</span>
+              <span className="text-[10px] text-slate-400 block font-mono mt-0.5">ERP S/4HANA Suite</span>
             </div>
           </div>
           <button 
@@ -450,18 +486,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </nav>
 
-        {/* Mobile Bottom Ops */}
-        <div className="p-3 border-t border-slate-800 shrink-0">
-          <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/80 text-[11px]">
-            <div className="flex items-center justify-between text-[9px] uppercase tracking-widest text-slate-400 font-bold mb-1">
-              <span>Operaciones LatAm</span>
-              <span className="text-emerald-400 font-mono">SCL • HQ</span>
+        {/* Mobile User & Logout Area */}
+        {currentUser && (
+          <div className="p-3 border-t border-slate-800 shrink-0 flex items-center justify-between bg-slate-900">
+            <div className="flex items-center gap-2 min-w-0">
+              <img
+                src={currentUser.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=2563eb&color=fff&bold=true`}
+                alt={currentUser.name}
+                className="w-8 h-8 rounded-lg object-cover border border-slate-700"
+              />
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-slate-200 truncate">{currentUser.name}</div>
+                <div className="text-[10px] text-blue-400 capitalize">{currentUser.role}</div>
+              </div>
             </div>
-            <p className="text-slate-300 font-medium">
-              Chile <span className="text-slate-500">→</span> UY, BR, MX, CO
-            </p>
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg"
+                title="Cerrar sesión"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
           </div>
-        </div>
+        )}
       </aside>
     </>
   );

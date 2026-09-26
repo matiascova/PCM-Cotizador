@@ -390,11 +390,11 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
           </div>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white leading-tight">
-            {quote.project.projectTitle}
+            {effectiveProjectTitle}
           </h1>
 
           <p className="text-slate-300 text-base sm:text-lg leading-relaxed font-normal max-w-2xl">
-            {quote.project.businessObjective || quote.project.scopeDescription || (
+            {effectiveBusinessObjective || effectiveScopeDescription || (
               currentLang === 'en'
                 ? 'Technical and commercial proposal for expert consulting, software architecture implementation, and systems integration.'
                 : currentLang === 'pt'
@@ -1077,7 +1077,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
             <div className="divide-y divide-slate-200">
               <div className="grid grid-cols-1 sm:grid-cols-4 p-2.5">
                 <span className="font-bold text-slate-900 font-mono">{currentLang === 'en' ? '01 Scope' : currentLang === 'pt' ? '01 Objeto' : '01 Objeto'}</span>
-                <span className="col-span-3 text-slate-700">{quote.project.projectTitle} · {quote.client.companyName}.</span>
+                <span className="col-span-3 text-slate-700">{effectiveProjectTitle} · {quote.client.companyName}.</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-4 p-2.5 bg-slate-50/50">
                 <span className="font-bold text-slate-900 font-mono">{currentLang === 'en' ? '02 Price' : currentLang === 'pt' ? '02 Preço' : '02 Precio'}</span>
@@ -1268,7 +1268,7 @@ export const DossierEditorialView: React.FC<DossierEditorialViewProps> = ({
             <p>{currentLang === 'en' ? 'Confidential Document' : currentLang === 'pt' ? 'Documento Confidencial' : 'Documento confidencial'}</p>
           </div>
           <div className="sm:text-right">
-            <p className="font-bold" style={{ color: activePalette.colors.accent }}>{formatUfNumber(totalInUf)} UF · {quote.project.projectType}</p>
+            <p className="font-bold" style={{ color: activePalette.colors.accent }}>{formatUfNumber(totalInUf)} UF · {effectiveProjectType}</p>
             <p>{t.cover.confidentialityNotice.replace('{months}', String(activeConfidentialityMonths))}</p>
           </div>
         </div>

@@ -11,15 +11,19 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Building2,
-  ExternalLink
+  ExternalLink,
+  ShieldCheck,
+  Crown,
+  User,
+  LogOut
 } from 'lucide-react';
-import { Quotation } from '../types';
+import { Quotation, AppUser, AppNavTab } from '../types';
 import { calculateQuotationTotals, formatCurrency } from '../utils/calculations';
 import { BancoCentralData, formatUfValue } from '../services/bcentralService';
 
 interface HeaderProps {
   quotations: Quotation[];
-  activeNav: string;
+  activeNav: AppNavTab;
   onNewQuotation: () => void;
   onResetData: () => void;
   onToggleMobileSidebar?: () => void;
@@ -27,6 +31,9 @@ interface HeaderProps {
   onToggleSidebarCollapse?: () => void;
   bcentralData?: BancoCentralData;
   onOpenBancoCentralModal?: () => void;
+  currentUser?: AppUser | null;
+  onOpenUsersTab?: () => void;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -38,7 +45,10 @@ export const Header: React.FC<HeaderProps> = ({
   isSidebarCollapsed,
   onToggleSidebarCollapse,
   bcentralData,
-  onOpenBancoCentralModal
+  onOpenBancoCentralModal,
+  currentUser,
+  onOpenUsersTab,
+  onLogout
 }) => {
   const getNavTitle = () => {
     switch (activeNav) {
@@ -52,6 +62,8 @@ export const Header: React.FC<HeaderProps> = ({
         return { subtitle: 'SAP MM Procurement', title: 'Compras, SOLPEDs & Órdenes de Compra' };
       case 'suppliers':
         return { subtitle: 'SAP MM Vendor Master', title: 'Maestro de Proveedores & Subcontratistas' };
+      case 'users':
+        return { subtitle: 'Access & Security', title: 'Módulo de Acceso & Gestión de Usuarios' };
       case 'builder':
       default:
         return { subtitle: 'Proposal Builder', title: 'Sistema de Cotizaciones & Staffing SAP' };
@@ -138,6 +150,55 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
+        {/* Current User Badge */}
+        {currentUser && (
+          <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+            <button
+              type="button"
+              onClick={onOpenUsersTab}
+              className="flex items-center gap-2 py-1 px-2 hover:bg-slate-50 rounded-xl border border-transparent hover:border-slate-200 transition-all text-left cursor-pointer group"
+              title="Administración de Usuarios y Perfil"
+            >
+              <img
+                src={currentUser.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=2563eb&color=fff&bold=true`}
+                alt={currentUser.name}
+                className="w-8 h-8 rounded-lg object-cover border border-slate-200"
+              />
+              <div className="hidden xl:block min-w-0">
+                <div className="text-xs font-bold text-slate-800 group-hover:text-blue-600 truncate max-w-[130px]">
+                  {currentUser.name}
+                </div>
+                <div className="text-[10px] font-semibold text-slate-400 capitalize flex items-center gap-1">
+                  {currentUser.role === 'administrador' ? (
+                    <span className="text-indigo-600 font-bold flex items-center gap-0.5">
+                      <Crown className="w-3 h-3" /> Admin
+                    </span>
+                  ) : currentUser.role === 'supervisor' ? (
+                    <span className="text-sky-600 font-bold flex items-center gap-0.5">
+                      <ShieldCheck className="w-3 h-3" /> Supervisor
+                    </span>
+                  ) : (
+                    <span className="text-emerald-600 font-bold flex items-center gap-0.5">
+                      <User className="w-3 h-3" /> Usuario
+                    </span>
+                  )}
+                </div>
+              </div>
+            </button>
+
+            {onLogout && (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                title="Cerrar sesión"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        )}
+
         <button
           onClick={onResetData}
           title="Restaurar ejemplos de cotizaciones SAP"
@@ -159,5 +220,3 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
-
-

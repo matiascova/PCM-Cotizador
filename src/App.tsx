@@ -4,7 +4,16 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Quotation, QuotationStatus, SapModuleCode, Professional, ClientMasterItem, CompanyProfile } from './types';
+import { 
+  Quotation, 
+  QuotationStatus, 
+  SapModuleCode, 
+  Professional, 
+  ClientMasterItem, 
+  CompanyProfile,
+  AppUser,
+  AppNavTab
+} from './types';
 import { INITIAL_QUOTATIONS } from './data/initialQuotations';
 import { translateGanttPlanToSpanish } from './data/ganttTemplates';
 import { Sidebar } from './components/Sidebar';
@@ -21,6 +30,14 @@ import { QuotationPrintView } from './components/QuotationPrintView';
 import { BancoCentralModal } from './components/BancoCentralModal';
 import { ProcurementView } from './components/ProcurementView';
 import { SuppliersView } from './components/SuppliersView';
+import { UsersView } from './components/UsersView';
+import { LoginView } from './components/LoginView';
+import { 
+  getStoredUsers, 
+  saveStoredUsers, 
+  getStoredCurrentUser, 
+  saveStoredCurrentUser 
+} from './data/usersMaster';
 import { getStoredSolpeds } from './services/procurementService';
 import { getStoredSuppliers } from './data/suppliersMaster';
 import { 
@@ -48,6 +65,40 @@ import { isResourceRateMismatched, rescueResourceRatesForCurrency } from './util
 const STORAGE_KEY = 'sap_quotations_v1_data';
 
 export default function App() {
+  // Authentication & Users State
+  const [users, setUsers] = useState<AppUser[]>(getStoredUsers);
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(getStoredCurrentUser);
+
+  const handleUpdateUsers = (updated: AppUser[]) => {
+    setUsers(updated);
+    saveStoredUsers(updated);
+
+    // If current user is updated in the list, update session as well
+    if (currentUser) {
+      const refreshed = updated.find(u => u.id === currentUser.id);
+      if (refreshed) {
+        setCurrentUser(refreshed);
+        saveStoredCurrentUser(refreshed);
+      }
+    }
+  };
+
+  const handleLoginSuccess = (user: AppUser) => {
+    setCurrentUser(user);
+    saveStoredCurrentUser(user);
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    saveStoredCurrentUser(null);
+  };
+
+  const handleSwitchUser = (user: AppUser) => {
+    setCurrentUser(user);
+    saveStoredCurrentUser(user);
+  };
+
+  // Quotations State
   const [quotations, setQuotations] = useState<Quotation[]>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -106,8 +157,8 @@ export default function App() {
       .catch(err => console.warn('Could not sync Banco Central indicators:', err));
   }, []);
 
-  // Navigation state matching Geometric Balance sidebar
-  const [activeNav, setActiveNav] = useState<'builder' | 'history' | 'clients' | 'resources' | 'procurement' | 'suppliers'>('builder');
+  // Navigation state
+  const [activeNav, setActiveNav] = useState<AppNavTab>('builder');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Collapsible Curtain Sidebar (default true to maximize screen space)
@@ -249,50 +300,52 @@ export default function App() {
         contactRole: 'Gerente de TI / Transformación Digital',
         contactEmail: '',
         contactPhone: '',
-        industry: 'Manufactura & Operaciones',
-        country: 'Chile'
+        taxAddress: 'Santiago, Chile',
+        country: 'Chile',
+        industry: 'Tecnología & Consultoría'
       },
       project: {
-        projectTitle: `Consultoría Especializada SAP ${prof.moduleCode.replace('SAP_', '')} - ${prof.name}`,
+        projectTitle: `Asignación Especialista SAP ${prof.roleTitle}`,
         projectType: 'Soporte AMS / Bolsa de Horas',
-        sapSystemVersion: 'SAP S/4HANA 2023',
-        methodology: 'SAP Activate',
-        durationMonths: 3,
-        estimatedStartDate: new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10),
-        businessObjective: `Provisión de servicios profesionales de alto nivel para ${prof.moduleName}.`,
-        scopeDescription: `Asignación de consultor especialista: ${prof.name} (${prof.roleTitle}). ${prof.bio || ''}`,
-        assumptions: [
-          'Acceso a los sistemas SAP del cliente',
-          'Interlocutor técnico asignado',
-          'Ambiente de pruebas disponible'
-        ],
-        outOfScope: [
-          'Licenciamiento de software SAP',
-          'Infraestructura de hardware o hosting'
-        ]
+        sapSystemVersion: 'SAP S/4HANA Cloud',
+        methodology: 'Ágil / Scrum Híbrido',
+        durationMonths: 1,
+        estimatedStartDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+        businessObjective: `Acompañamiento especializado en el módulo ${prof.moduleName} por parte de ${prof.name}.`,
+        scopeDescription: `Servicios profesionales de consultoría SAP ${prof.moduleName} (${prof.seniority}).`,
+        assumptions: ['Modalidad: ' + prof.modality],
+        outOfScope: ['Gastos de traslado fuera de la región si es remoto']
       },
       resources: [
         {
-          id: `res-${Date.now()}-1`,
+          id: `res-${Date.now()}`,
           moduleCode: prof.moduleCode,
           moduleName: prof.moduleName,
-          roleTitle: `${prof.name} (${prof.roleTitle})`,
+          roleTitle: prof.roleTitle,
           seniority: prof.seniority,
           hours: hours,
           hourlyRate: rate,
-          subtotal: rate * hours,
+          subtotal: hours * rate,
           modality: prof.modality,
-          responsibilities: prof.skills?.join(', ') || 'Consultoría especializada SAP.',
           professionalId: prof.id,
           professionalName: prof.name
         }
       ],
-      milestones: [],
+      milestones: [
+        {
+          id: 'm1',
+          title: 'Facturación Mensual Staffing',
+          description: 'Cierre de ciclo de 160 horas trabajadas.',
+          deliverables: 'Timesheet firmado y reporte mensual de actividades SAP',
+          estimatedWeek: 'Semana 4',
+          paymentPercentage: 100
+        }
+      ],
       discountPercentage: 0,
       taxRatePercentage: 19,
       expensesAmount: 0,
-      paymentTerms: '50% al inicio de fase Realize, 50% a la salida en vivo (Go-Live).',
-      guaranteeHypercareDays: 30,
+      paymentTerms: '30 días contra informe de actividades aprobado',
+      guaranteeHypercareDays: 15,
       statusHistory: [],
       updatedAt: new Date().toISOString().slice(0, 10)
     };
@@ -301,36 +354,10 @@ export default function App() {
     setIsFormOpen(true);
   };
 
-  // Sync to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(quotations));
-    } catch (e) {
-      console.error('Error saving quotations to localStorage', e);
-    }
-  }, [quotations]);
-
-  // Keep active modal up-to-date if quotation data changed
-  useEffect(() => {
-    if (selectedQuote) {
-      const refreshed = quotations.find(q => q.id === selectedQuote.id);
-      if (refreshed) setSelectedQuote(refreshed);
-    }
-    if (handoverQuote) {
-      const refreshed = quotations.find(q => q.id === handoverQuote.id);
-      if (refreshed) setHandoverQuote(refreshed);
-    }
-  }, [quotations]);
-
-  // Actions
-  const handleNewQuotation = () => {
-    setEditingQuote(null);
-    setIsFormOpen(true);
-  };
-
-  const handleNewQuoteWithModule = (moduleCode: SapModuleCode) => {
-    const mod = modules.find(m => m.code === moduleCode);
-    const hourlyRate = mod ? getModuleBenchmarkRate(mod, 'Senior', 'USD') : 90;
+  const handleNewQuoteWithModule = (mod: SapCatalogModule) => {
+    const currency = 'CLP';
+    const rate = getModuleBenchmarkRate(mod, 'Senior', currency);
+    const hours = 120;
     const customQuote: Quotation = {
       id: `quote-${Date.now()}`,
       code: `COT-SAP-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`,
@@ -338,7 +365,7 @@ export default function App() {
       createdAt: new Date().toISOString().slice(0, 10),
       validUntil: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
       status: 'draft',
-      currency: 'USD',
+      currency: 'CLP',
       currencySymbol: '$',
       client: {
         companyName: '',
@@ -347,40 +374,68 @@ export default function App() {
         contactRole: 'Gerente de TI / Transformación Digital',
         contactEmail: '',
         contactPhone: '',
-        industry: 'Manufactura & Operaciones',
-        country: 'Chile'
+        taxAddress: 'Santiago, Chile',
+        country: 'Chile',
+        industry: 'Consultoría & Servicios Empresariales'
       },
       project: {
-        projectTitle: `Implementación & Consultoría Especializada ${mod ? mod.name : 'Servicio Especializado'}`,
+        projectTitle: `Implementación y Soporte Especializado ${mod.name} (${mod.code})`,
         projectType: 'Roll-out de Módulos',
         sapSystemVersion: 'SAP S/4HANA 2023',
         methodology: 'SAP Activate',
-        durationMonths: 4,
+        durationMonths: 3,
         estimatedStartDate: new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10),
-        businessObjective: `Configuración y puesta en marcha de ${mod ? mod.name : 'servicio especializado'}.`,
-        scopeDescription: `Servicios profesionales de consultoría funcional y técnica para ${mod ? mod.name : 'servicio especializado'}.`,
-        assumptions: [],
-        outOfScope: []
+        businessObjective: `Despliegue y configuración avanzada del componente funcional ${mod.name}.`,
+        scopeDescription: `Configuración, parametrización estándar, pruebas de aceptación y capacitación en ${mod.name}.`,
+        assumptions: [
+          'Disponibilidad del equipo funcional de contraparte',
+          'Accesos SAP entregados previo al inicio del sprint'
+        ],
+        outOfScope: ['Licenciamiento SAP base']
       },
       resources: [
         {
-          id: `res-${Date.now()}-1`,
-          moduleCode: moduleCode,
-          moduleName: mod ? mod.name : moduleCode,
-          roleTitle: `Consultor Senior ${mod ? mod.shortName : moduleCode}`,
+          id: `res-${Date.now()}`,
+          moduleCode: mod.code,
+          moduleName: mod.name,
+          roleTitle: `Consultor Senior ${mod.code}`,
           seniority: 'Senior',
-          hours: 160,
-          hourlyRate: hourlyRate,
-          subtotal: hourlyRate * 160,
-          modality: 'Híbrido',
-          responsibilities: mod?.typicalDeliverables?.[0] || mod?.defaultResponsibilities || 'Consultoría especializada.'
+          hours: hours,
+          hourlyRate: rate,
+          subtotal: hours * rate,
+          modality: 'Híbrido'
         }
       ],
-      milestones: [],
+      milestones: [
+        {
+          id: 'm1',
+          title: 'Hito 1: Blueprint & Diseño de Procesos',
+          description: `Definición de procesos To-Be para ${mod.name}`,
+          deliverables: 'Documento BBD firmado',
+          estimatedWeek: 'Semana 4',
+          paymentPercentage: 30
+        },
+        {
+          id: 'm2',
+          title: 'Hito 2: Configuración & Pruebas Integrales',
+          description: 'Parametrización en ambiente QA y pruebas E2E',
+          deliverables: 'Matriz de configuración y actas de prueba',
+          estimatedWeek: 'Semana 8',
+          paymentPercentage: 40
+        },
+        {
+          id: 'm3',
+          title: 'Hito 3: Go-Live & Salida a Producción',
+          description: 'Puesta en marcha y soporte Hypercare inicial',
+          deliverables: 'Acta de Go-Live formal',
+          estimatedWeek: 'Semana 12',
+          paymentPercentage: 30
+        }
+      ],
       discountPercentage: 0,
       taxRatePercentage: 19,
       expensesAmount: 0,
-      paymentTerms: '50% al inicio de fase Realize, 50% a la salida en vivo (Go-Live).',
+      paymentTerms: '30% inicio, 40% pruebas integrales, 30% Go-Live',
       guaranteeHypercareDays: 30,
       statusHistory: [],
       updatedAt: new Date().toISOString().slice(0, 10)
@@ -390,107 +445,140 @@ export default function App() {
     setIsFormOpen(true);
   };
 
-  const handleEditQuotation = (quote: Quotation) => {
-    setEditingQuote(quote);
-    setIsFormOpen(true);
-    setSelectedQuote(null);
-  };
+  // Save changes to localStorage whenever quotations update
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(quotations));
+    } catch (e) {
+      console.error('Error saving quotations to localStorage', e);
+    }
+  }, [quotations]);
 
-  const handleSaveQuotation = (saved: Quotation) => {
+  // Handlers for Quote Operations
+  const handleSaveQuotation = (quote: Quotation) => {
+    // If client is present, ensure logoUrl is preserved or filled with default
+    const clientWithLogo = {
+      ...quote.client,
+      logoUrl: quote.client.logoUrl && quote.client.logoUrl.trim().length > 0 ? quote.client.logoUrl : getClientLogo(quote.client),
+      fantasyName: quote.client.fantasyName || quote.client.companyName
+    };
+    const finalQuote = { ...quote, client: clientWithLogo };
+
     setQuotations(prev => {
-      const exists = prev.some(q => q.id === saved.id);
+      const exists = prev.some(q => q.id === finalQuote.id);
       if (exists) {
-        return prev.map(q => (q.id === saved.id ? saved : q));
-      } else {
-        return [saved, ...prev];
+        return prev.map(q => q.id === finalQuote.id ? finalQuote : q);
       }
+      return [finalQuote, ...prev];
     });
 
     setIsFormOpen(false);
     setEditingQuote(null);
-    setSelectedQuote(saved);
+    setSelectedQuote(finalQuote);
   };
 
-  const handleUpdateQuotation = (updated: Quotation) => {
-    setQuotations(prev => prev.map(q => (q.id === updated.id ? updated : q)));
+  const handleUpdateQuotation = (updatedQuote: Quotation) => {
+    setQuotations(prev => prev.map(q => q.id === updatedQuote.id ? updatedQuote : q));
+    if (selectedQuote && selectedQuote.id === updatedQuote.id) {
+      setSelectedQuote(updatedQuote);
+    }
   };
 
-  const handleDeleteQuotation = (quoteId: string) => {
-    setQuotations(prev => prev.filter(q => q.id !== quoteId));
-    if (selectedQuote?.id === quoteId) setSelectedQuote(null);
-    if (handoverQuote?.id === quoteId) setHandoverQuote(null);
+  const handleDeleteQuotation = (id: string) => {
+    if (window.confirm('¿Está seguro de que desea eliminar esta cotización?')) {
+      setQuotations(prev => prev.filter(q => q.id !== id));
+      if (selectedQuote && selectedQuote.id === id) {
+        setSelectedQuote(null);
+      }
+    }
   };
 
   const handleDuplicateQuotation = (quote: Quotation) => {
-    const newCode = `COT-SAP-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
     const duplicated: Quotation = {
       ...quote,
       id: `quote-${Date.now()}`,
-      code: newCode,
+      code: `${quote.code}-COPY`,
       version: '1.0',
-      createdAt: new Date().toISOString().slice(0, 10),
-      validUntil: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
       status: 'draft',
-      rejectionReason: undefined,
+      createdAt: new Date().toISOString().slice(0, 10),
+      updatedAt: new Date().toISOString().slice(0, 10),
       statusHistory: [
         {
-          id: `log-dup-${Date.now()}`,
-          date: new Date().toISOString().replace('T', ' ').slice(0, 16),
+          id: `log-${Date.now()}`,
+          date: new Date().toISOString().slice(0, 10),
           status: 'draft',
-          note: `Duplicada a partir de la cotización ${quote.code}.`,
-          author: 'Líder Comercial SAP'
+          note: `Duplicada a partir de ${quote.code}`,
+          author: currentUser?.name || 'Administrador SAP'
         }
-      ],
-      updatedAt: new Date().toISOString().replace('T', ' ').slice(0, 16)
+      ]
     };
-
     setQuotations(prev => [duplicated, ...prev]);
     setSelectedQuote(duplicated);
   };
 
-  const handleUpdateQuoteStatus = (quoteId: string, newStatus: QuotationStatus) => {
+  const handleUpdateQuoteStatus = (id: string, newStatus: QuotationStatus, note: string) => {
     setQuotations(prev => prev.map(q => {
-      if (q.id !== quoteId) return q;
-      const now = new Date().toISOString().replace('T', ' ').slice(0, 16);
-      return {
-        ...q,
-        status: newStatus,
-        statusHistory: [
-          {
-            id: `log-st-${Date.now()}`,
-            date: now,
-            status: newStatus,
-            note: `Estado cambiado a ${newStatus}.`,
-            author: 'Gestor Comercial SAP'
-          },
-          ...(q.statusHistory || [])
-        ],
-        updatedAt: now
-      };
+      if (q.id === id) {
+        const newLog = {
+          id: `log-${Date.now()}`,
+          date: new Date().toISOString().slice(0, 10),
+          status: newStatus,
+          note: note || `Estado cambiado a ${newStatus}`,
+          author: currentUser?.name || 'Administrador SAP'
+        };
+        return {
+          ...q,
+          status: newStatus,
+          updatedAt: new Date().toISOString().slice(0, 10),
+          statusHistory: [...(q.statusHistory || []), newLog]
+        };
+      }
+      return q;
     }));
   };
 
+  const handleEditQuotation = (quote: Quotation) => {
+    setEditingQuote(quote);
+    setSelectedQuote(null);
+    setIsFormOpen(true);
+  };
+
+  const handleNewQuotation = () => {
+    setEditingQuote(null);
+    setIsFormOpen(true);
+  };
+
   const handleResetData = () => {
-    if (confirm('¿Desea restablecer las cotizaciones de ejemplo preconfiguradas?')) {
+    if (window.confirm('¿Desea restaurar las cotizaciones a los ejemplos predeterminados?')) {
       setQuotations(INITIAL_QUOTATIONS);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_QUOTATIONS));
     }
   };
 
-  // If in Print View mode, render print view full page
+  // If user is not logged in, present corporate Login View
+  if (!currentUser) {
+    return <LoginView users={users} onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // Full-screen Dedicated Dossier Print / Export View
   if (printQuote) {
     return (
       <QuotationPrintView
         quote={printQuote}
-        onBack={() => setPrintQuote(null)}
-        companyProfile={companyProfile}
+        onBack={() => {
+          setSelectedQuote(printQuote);
+          setPrintQuote(null);
+        }}
       />
     );
   }
 
+  const procurementCount = getStoredSolpeds().length;
+  const suppliersCount = getStoredSuppliers().length;
+
   return (
-    <div className="flex h-screen w-full bg-[#F1F5F9] font-sans overflow-hidden text-slate-800">
-      {/* Left Curtain Sidebar */}
+    <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
+      {/* Dynamic Curtain Collapsible Sidebar */}
       <Sidebar
         activeNav={activeNav}
         setActiveNav={setActiveNav}
@@ -501,8 +589,11 @@ export default function App() {
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={handleToggleSidebarCollapse}
         professionalsCount={professionals.length}
-        procurementCount={getStoredSolpeds().length}
-        suppliersCount={getStoredSuppliers().length}
+        procurementCount={procurementCount}
+        suppliersCount={suppliersCount}
+        usersCount={users.length}
+        currentUser={currentUser}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Area */}
@@ -518,6 +609,9 @@ export default function App() {
           onToggleSidebarCollapse={handleToggleSidebarCollapse}
           bcentralData={bcentralData}
           onOpenBancoCentralModal={() => setIsBancoCentralModalOpen(true)}
+          currentUser={currentUser}
+          onOpenUsersTab={() => setActiveNav('users')}
+          onLogout={handleLogout}
         />
 
         {/* Scrollable Center Body */}
@@ -559,6 +653,15 @@ export default function App() {
           ) : activeNav === 'suppliers' ? (
             <div className="w-[90vw] max-w-[90vw] mx-auto">
               <SuppliersView />
+            </div>
+          ) : activeNav === 'users' ? (
+            <div className="w-[90vw] max-w-[90vw] mx-auto">
+              <UsersView
+                users={users}
+                currentUser={currentUser}
+                onUpdateUsers={handleUpdateUsers}
+                onSwitchUser={handleSwitchUser}
+              />
             </div>
           ) : (
             /* Builder & History: Quotation List and Pipeline */
@@ -642,4 +745,3 @@ export default function App() {
     </div>
   );
 }
-

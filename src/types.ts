@@ -700,3 +700,31 @@ export interface SupplierMasterItem {
   updatedAt: string;
 }
 
+// ==========================================
+// MÓDULO DE ACCESO DE USUARIOS & ROLES ERP
+// ==========================================
+
+export type UserRole = 'administrador' | 'supervisor' | 'usuario';
+
+export interface AppUser {
+  id: string;
+  name: string;                         // Nombre completo del usuario
+  email: string;                        // Correo electrónico institucional / acceso
+  taxId: string;                        // RUT o NIF según país
+  taxIdType?: string;                   // Tipo de identificación (ej. "RUT / RUN", "NIF", "RFC")
+  country: string;                      // Código del país: 'CL', 'ES', 'MX', 'CO', 'AR', 'PE', 'BR', 'US', etc.
+  phone: string;                        // Celular / teléfono de contacto
+  role: UserRole;                       // 'administrador' | 'supervisor' | 'usuario'
+  password?: string;                    // Contraseña de acceso (almacenada localmente)
+  status: 'active' | 'inactive';        // Estado de la cuenta
+  avatarUrl?: string;                   // Foto de perfil o avatar
+  department?: string;                  // Área o departamento (ej. "Dirección General", "Consultoría SAP", "Comercial")
+  lastLogin?: string;                   // Fecha y hora del último acceso
+  createdAt: string;
+  updatedAt?: string;
+  notes?: string;
+}
+
+export type AppNavTab = 'builder' | 'history' | 'clients' | 'resources' | 'procurement' | 'suppliers' | 'users';
+
+
